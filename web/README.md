@@ -16,6 +16,7 @@ npm run dev          # http://localhost:3000
 - `.env.local`이 없으면 개발용 계정 **admin / admin**으로 로그인합니다.
 - DB는 설치가 필요 없는 내장 Postgres(PGlite)를 `web/.data/pglite`에 저장합니다. 폴더를 지우면 초기화됩니다.
 - 환경 변수 목록은 [`env.example`](env.example)에 있습니다.
+- 메일 값이 없으면 **시뮬레이터 모드**(가상 메일함)로 동작합니다. 실제 Gmail 연결은 [`docs/guides/메일-연동-가이드.md`](../docs/guides/메일-연동-가이드.md)를 따릅니다.
 
 ## 스크립트
 
@@ -43,12 +44,20 @@ src/
       nodes, nodes/[id]    생성 / 이름 변경·이동·삭제
       items/[id]           개발사항 상세·수집 조건
       items/[id]/stages    단계 상태 변경
-  components/              화면 컴포넌트 (Workspace, TreePanel, ItemDetail …)
+      items/[id]/collect-request  수집 요청 메일 미리보기(GET)·발송(POST)
+      items/[id]/mails     개발사항의 메일 이력
+      mail/poll            메일 확인 (POST: 화면 버튼, GET ?secret=: 외부 크론)
+      mail/status          모드·미분류 개수·마지막 확인 시각
+      mails, mails/[id]    미분류함 목록 / 메일 보기·지정·무시·되돌리기
+      settings             현재 config (비밀값은 설정 여부만)
+      sim/inject           시뮬레이터 샘플 메일 넣기
+  components/              화면 컴포넌트 (Workspace, TreePanel, ItemDetail, Mail, MailInbox, Settings …)
   lib/
     auth.ts                더미 로그인과 HMAC 서명 쿠키
     db/                    Drizzle 스키마, 연결(Neon/PGlite), SQL 마이그레이션
     domain/                단계 정의, 트리 배치 규칙, 메일 태그·파일명 규칙
-    repo/                  DB 작업 (트리, 개발사항, 단계, 이력)
+    mail/                  메일 config·본문 작성·분류/매칭·Gmail SMTP/IMAP·시뮬레이터 샘플
+    repo/                  DB 작업 (트리, 개발사항, 단계, 이력, 메일)
 tests/                     Vitest
 ```
 

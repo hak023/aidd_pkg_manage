@@ -47,4 +47,52 @@ CREATE TABLE events (
 CREATE INDEX events_item_idx ON events(item_id, created_at);
 `,
   },
+  {
+    id: "0002_mail",
+    sql: `
+CREATE TABLE mails (
+  id serial PRIMARY KEY,
+  item_id integer REFERENCES dev_items(node_id) ON DELETE SET NULL,
+  direction text NOT NULL CHECK (direction IN ('out','in')),
+  kind text NOT NULL,
+  status text NOT NULL CHECK (status IN ('sent','simulated','matched','unmatched','ignored')),
+  match_method text,
+  message_id text,
+  in_reply_to text,
+  refs text NOT NULL DEFAULT '',
+  from_addr text NOT NULL DEFAULT '',
+  to_addrs text NOT NULL DEFAULT '',
+  subject text NOT NULL DEFAULT '',
+  body_text text NOT NULL DEFAULT '',
+  simulated boolean NOT NULL DEFAULT false,
+  mail_date timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX mails_item_idx ON mails(item_id, mail_date);
+CREATE INDEX mails_status_idx ON mails(status);
+CREATE UNIQUE INDEX mails_dir_msgid_uq ON mails(direction, message_id) WHERE message_id IS NOT NULL;
+
+CREATE TABLE mail_attachments (
+  id serial PRIMARY KEY,
+  mail_id integer NOT NULL REFERENCES mails(id) ON DELETE CASCADE,
+  filename text NOT NULL,
+  content_type text NOT NULL DEFAULT '',
+  size integer NOT NULL DEFAULT 0,
+  content text
+);
+CREATE INDEX mail_attachments_mail_idx ON mail_attachments(mail_id);
+
+CREATE TABLE sim_inbox (
+  id serial PRIMARY KEY,
+  payload text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  consumed_at timestamptz
+);
+
+CREATE TABLE app_state (
+  key text PRIMARY KEY,
+  value text NOT NULL
+);
+`,
+  },
 ];

@@ -7,6 +7,10 @@ const PUBLIC_PATHS = ["/login", "/api/auth/login"];
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (PUBLIC_PATHS.some((p) => pathname === p)) return NextResponse.next();
+  // 외부 크론의 메일 확인 호출: secret 값은 라우트 핸들러에서 검사한다
+  if (pathname === "/api/mail/poll" && request.method === "GET" && request.nextUrl.searchParams.has("secret")) {
+    return NextResponse.next();
+  }
 
   const cfg = getAuthConfig();
   const ok = cfg ? await verifySessionToken(cfg, request.cookies.get(SESSION_COOKIE)?.value) : false;

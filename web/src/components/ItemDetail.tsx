@@ -4,15 +4,19 @@ import { useEffect, useState } from "react";
 import { api, formatDateTime } from "@/lib/client-api";
 import type { StageKey, StageStatus } from "@/lib/db/schema";
 import type { ItemDetailDTO } from "@/lib/repo/tree";
+import type { MailSummaryDTO } from "@/lib/repo/mail";
 import { STAGES, STATUS_LABEL, stageDef } from "@/lib/domain/stages";
 import { docFileName, forwardSubject, mailTag } from "@/lib/domain/naming";
 import type { Toast } from "./Workspace";
+import { MailList, MailViewer } from "./Mail";
 
 interface Props {
   id: number;
   onChanged: () => Promise<void>;
   notify: (t: Toast) => void;
   onSelect: (id: number | null) => void;
+  /** 메일 확인 등으로 바뀌면 다시 불러온다 */
+  refreshToken: number;
 }
 
 const STATUS_STYLE: Record<StageStatus, { circle: string; text: string; chip: string }> = {
@@ -21,20 +25,30 @@ const STATUS_STYLE: Record<StageStatus, { circle: string; text: string; chip: st
   done: { circle: "bg-ok border-ok text-white", text: "text-ok", chip: "bg-ok-soft text-ok" },
 };
 
-export default function ItemDetail({ id, onChanged, notify, onSelect }: Props) {
+export default function ItemDetail({ id, onChanged, notify, onSelect, refreshToken }: Props) {
   const [item, setItem] = useState<ItemDetailDTO | null>(null);
+  const [mails, setMails] = useState<MailSummaryDTO[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<StageKey | null>(null);
+  const [collectOpen, setCollectOpen] = useState(false);
+  const [viewMail, setViewMail] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
-    api<{ item: ItemDetailDTO }>(`/api/items/${id}`)
-      .then(({ item }) => alive && setItem(item))
+    Promise.all([
+      api<{ item: ItemDetailDTO }>(`/api/items/${id}`),
+      api<{ mails: MailSummaryDTO[] }>(`/api/items/${id}/mails`),
+    ])
+      .then(([a, b]) => {
+        if (!alive) return;
+        setItem(a.item);
+        setMails(b.mails);
+      })
       .catch((e: Error) => alive && setError(e.message));
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, refreshToken]);
 
   if (error) return <div className="m-6 p-3 rounded-md bg-danger-soft text-danger text-[13px]">{error}</div>;
   if (!item) return <div className="p-6 text-muted">불러오는 중…</div>;
@@ -203,6 +217,18 @@ export default function ItemDetail({ id, onChanged, notify, onSelect }: Props) {
                 완료
               </button>
             )
+          ) : focused.key === "collect" ? (
+            <>
+              <button
+                onClick={() => setCollectOpen(true)}
+                className="px-4 py-2 rounded-md bg-accent text-white font-semibold text-[13px]"
+              >
+                {ACTION_LABEL.collect}
+              </button>
+              <span className="text-[12px] text-muted">
+                여러 번 보낼 수 있습니다. 회신이 오면 ‘메일 확인’ 때 자동으로 이 단계가 완료됩니다.
+              </span>
+            </>
           ) : (
             <>
               <button
@@ -226,6 +252,11 @@ export default function ItemDetail({ id, onChanged, notify, onSelect }: Props) {
         )}
       </section>
 
+      <section className="bg-panel border border-line rounded-xl p-5 mb-4">
+        <h3 className="font-semibold mb-2">메일 이력</h3>
+        <MailList mails={mails} empty="아직 주고받은 메일이 없습니다." onOpen={setViewMail} />
+      </section>
+
       <div className="grid lg:grid-cols-2 gap-4">
         <FieldsCard item={item} onSaved={setItem} notify={notify} />
         <section className="bg-panel border border-line rounded-xl p-5">
@@ -239,6 +270,112 @@ export default function ItemDetail({ id, onChanged, notify, onSelect }: Props) {
             ))}
           </ul>
         </section>
+      </div>
+
+      {collectOpen && (
+        <CollectDialog
+          itemId={id}
+          onClose={() => setCollectOpen(false)}
+          onSent={async (next, mail) => {
+            setCollectOpen(false);
+            setItem(next);
+            setMails((prev) => [mail, ...prev]);
+            await onChanged();
+            notify({
+              kind: "ok",
+              text: mail.simulated ? "수집 요청 메일을 가상 메일함에 기록했습니다 (시뮬레이터)." : "수집 요청 메일을 보냈습니다.",
+            });
+          }}
+          notify={notify}
+        />
+      )}
+      {viewMail !== null && <MailViewer id={viewMail} onClose={() => setViewMail(null)} />}
+    </div>
+  );
+}
+
+/** 수집 요청 메일 미리보기와 발송 확인 */
+function CollectDialog({
+  itemId,
+  onClose,
+  onSent,
+  notify,
+}: {
+  itemId: number;
+  onClose: () => void;
+  onSent: (item: ItemDetailDTO, mail: MailSummaryDTO) => Promise<void>;
+  notify: (t: Toast) => void;
+}) {
+  const [preview, setPreview] = useState<{ subject: string; text: string; to: string; mode: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api<{ subject: string; text: string; to: string; mode: string }>(`/api/items/${itemId}/collect-request`)
+      .then((p) => alive && setPreview(p))
+      .catch((e: Error) => alive && setError(e.message));
+    return () => {
+      alive = false;
+    };
+  }, [itemId]);
+
+  async function send() {
+    setBusy(true);
+    try {
+      const r = await api<{ item: ItemDetailDTO; mail: MailSummaryDTO }>(`/api/items/${itemId}/collect-request`, {
+        method: "POST",
+      });
+      await onSent(r.item, r.mail);
+    } catch (e) {
+      notify({ kind: "error", text: (e as Error).message });
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="수집 요청 메일 보내기"
+        className="bg-panel rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-3 border-b border-line">
+          <h2 className="font-semibold text-[15px]">수집 요청 메일 보내기</h2>
+          <p className="text-[12px] text-muted">
+            받는 사람은 config에 지정된 회사 주소로 고정됩니다.
+            {preview?.mode === "simulator" && " 지금은 시뮬레이터 모드라 실제로 발송하지 않고 가상 메일함에 기록합니다."}
+          </p>
+        </div>
+        {error && <div className="m-4 p-3 rounded-md bg-danger-soft text-danger text-[13px]">{error}</div>}
+        {!preview && !error && <div className="p-5 text-muted text-[13px]">불러오는 중…</div>}
+        {preview && (
+          <div className="px-5 py-3 overflow-y-auto flex-1 text-[13px]">
+            <div className="grid grid-cols-[80px_1fr] gap-y-1 mb-3">
+              <span className="text-muted">받는 사람</span>
+              <span className="font-mono break-all">{preview.to}</span>
+              <span className="text-muted">제목</span>
+              <span className="break-all">{preview.subject}</span>
+            </div>
+            <pre className="p-4 bg-bg rounded-lg text-[12px] leading-relaxed whitespace-pre-wrap break-words font-mono">
+              {preview.text}
+            </pre>
+          </div>
+        )}
+        <div className="px-5 py-3 border-t border-line flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 rounded-md border border-line text-[13px]">
+            취소
+          </button>
+          <button
+            onClick={send}
+            disabled={!preview || busy}
+            className="px-4 py-2 rounded-md bg-accent text-white font-semibold text-[13px] disabled:opacity-40"
+          >
+            {busy ? "보내는 중…" : "보내기"}
+          </button>
+        </div>
       </div>
     </div>
   );

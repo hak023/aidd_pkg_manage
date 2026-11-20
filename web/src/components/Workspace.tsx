@@ -1,25 +1,35 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/client-api";
+import { api, formatDateTime } from "@/lib/client-api";
 import type { NodeType } from "@/lib/db/schema";
 import type { TreeNodeDTO } from "@/lib/repo/tree";
+import type { MailStatusDTO, PollResult } from "@/lib/repo/mail";
 import { buildTree } from "@/lib/domain/tree-build";
 import TreePanel from "./TreePanel";
 import CreateDialog, { type CreateDefaults } from "./CreateDialog";
 import Dashboard from "./Dashboard";
 import ItemDetail from "./ItemDetail";
 import ContainerDetail from "./ContainerDetail";
+import MailInbox from "./MailInbox";
+import Settings from "./Settings";
+
+type Page = "inbox" | "settings";
+/** 사이트를 열어 둔 동안 자동 메일 확인 주기 */
+const AUTO_POLL_MS = 2 * 60 * 1000;
 
 export interface Toast {
   kind: "ok" | "error";
   text: string;
 }
 
-function readHash(): number | null {
-  const m = typeof window !== "undefined" ? window.location.hash.match(/^#node-(\d+)$/) : null;
-  return m ? Number(m[1]) : null;
+function readHash(): { id: number | null; page: Page | null } {
+  const h = typeof window !== "undefined" ? window.location.hash : "";
+  const m = h.match(/^#node-(\d+)$/);
+  if (m) return { id: Number(m[1]), page: null };
+  if (h === "#inbox" || h === "#settings") return { id: null, page: h.slice(1) as Page };
+  return { id: null, page: null };
 }
 
 export default function Workspace() {
@@ -29,6 +39,11 @@ export default function Workspace() {
   const [create, setCreate] = useState<CreateDefaults | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [page, setPage] = useState<Page | null>(null);
+  const [mailState, setMailState] = useState<MailStatusDTO | null>(null);
+  const [polling, setPolling] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const pollingRef = useRef(false);
 
   const reload = useCallback(async () => {
     try {
@@ -40,15 +55,70 @@ export default function Workspace() {
     }
   }, []);
 
+  const loadMailState = useCallback(async () => {
+    try {
+      setMailState(await api<MailStatusDTO>("/api/mail/status"));
+    } catch {
+      /* 머리글 표시용이므로 실패해도 무시 */
+    }
+  }, []);
+
+  /** 메일 확인. manual이면 결과를 항상 알려 주고, 자동이면 새 메일이 있을 때만 알린다. */
+  const poll = useCallback(
+    async (manual: boolean) => {
+      if (pollingRef.current) return;
+      pollingRef.current = true;
+      setPolling(true);
+      try {
+        const r = await api<PollResult>("/api/mail/poll", { method: "POST" });
+        if (r.stored > 0) {
+          await reload();
+          setRefreshToken((t) => t + 1);
+        }
+        if (manual || r.stored > 0) {
+          setToast({
+            kind: "ok",
+            text:
+              r.stored > 0
+                ? `새 메일 ${r.stored}건 (개발사항 매칭 ${r.matched}, 미분류 ${r.unmatched})`
+                : "새 메일이 없습니다.",
+          });
+        }
+      } catch (e) {
+        if (manual) setToast({ kind: "error", text: (e as Error).message });
+      } finally {
+        pollingRef.current = false;
+        setPolling(false);
+        await loadMailState();
+      }
+    },
+    [reload, loadMailState],
+  );
+
   useEffect(() => {
-    // 최초 로드와 주소의 #node-N 복원
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSelectedId(readHash());
-    void reload();
-    const onHash = () => setSelectedId(readHash());
+    // 최초 로드와 주소의 #node-N / #inbox / #settings 복원
+    const apply = () => {
+      const h = readHash();
+      setSelectedId(h.id);
+      setPage(h.page);
+    };
+    queueMicrotask(() => {
+      apply();
+      void reload();
+      void loadMailState();
+    });
+    const onHash = apply;
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
-  }, [reload]);
+  }, [reload, loadMailState]);
+
+  useEffect(() => {
+    // 화면이 보이는 동안만 자동 확인
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void poll(false);
+    }, AUTO_POLL_MS);
+    return () => clearInterval(t);
+  }, [poll]);
 
   useEffect(() => {
     if (!toast) return;
@@ -58,7 +128,14 @@ export default function Workspace() {
 
   const select = useCallback((id: number | null) => {
     setSelectedId(id);
+    setPage(null);
     window.history.replaceState(null, "", id ? `#node-${id}` : window.location.pathname);
+  }, []);
+
+  const openPage = useCallback((p: Page) => {
+    setSelectedId(null);
+    setPage(p);
+    window.history.replaceState(null, "", `#${p}`);
   }, []);
 
   const tree = useMemo(() => (flat ? buildTree(flat) : []), [flat]);
@@ -84,6 +161,44 @@ export default function Workspace() {
           <span className="text-muted text-[12px] hidden sm:inline">개발 산출물 작성 지원</span>
         </button>
         <div className="flex items-center gap-2">
+          {mailState && mailState.mode !== "gmail" && (
+            <button
+              onClick={() => openPage("settings")}
+              className={`text-[11px] px-2 py-0.5 rounded-full ${
+                mailState.mode === "simulator" ? "bg-warn-soft text-warn" : "bg-danger-soft text-danger"
+              }`}
+              title="메일 연동 설정 보기"
+            >
+              {mailState.mode === "simulator" ? "시뮬레이터 모드" : "메일 설정 필요"}
+            </button>
+          )}
+          <button
+            onClick={() => poll(true)}
+            disabled={polling}
+            className="border border-line rounded-md px-3 py-1.5 text-[13px] hover:border-accent disabled:opacity-50"
+            title={mailState?.lastPollAt ? `마지막 확인: ${formatDateTime(mailState.lastPollAt)}` : "메일 확인"}
+          >
+            {polling ? "확인 중…" : "메일 확인"}
+          </button>
+          <button
+            onClick={() => openPage("inbox")}
+            className={`rounded-md px-3 py-1.5 text-[13px] border ${
+              page === "inbox" ? "border-accent text-accent" : "border-line"
+            }`}
+          >
+            미분류함
+            {mailState && mailState.unmatched > 0 && (
+              <span className="ml-1.5 inline-block min-w-5 px-1.5 rounded-full bg-danger text-white text-[11px] font-semibold">
+                {mailState.unmatched}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => openPage("settings")}
+            className={`rounded-md px-2 py-1.5 text-[13px] ${page === "settings" ? "text-accent" : "text-muted hover:text-ink"}`}
+          >
+            설정
+          </button>
           <button
             onClick={() => openCreate("item", null)}
             className="bg-accent text-white rounded-md px-3 py-1.5 text-[13px] font-semibold"
@@ -116,9 +231,28 @@ export default function Workspace() {
               불러오기 실패: {loadError}
             </div>
           )}
-          {!selected && <Dashboard flat={flat ?? []} loading={flat === null} onSelect={select} onCreate={openCreate} />}
+          {!selected && page === "inbox" && (
+            <MailInbox
+              flat={flat ?? []}
+              refreshToken={refreshToken}
+              notify={notify}
+              onChanged={async () => {
+                await reload();
+                await loadMailState();
+              }}
+            />
+          )}
+          {!selected && page === "settings" && <Settings flat={flat ?? []} notify={notify} onPoll={() => poll(true)} />}
+          {!selected && !page && <Dashboard flat={flat ?? []} loading={flat === null} onSelect={select} onCreate={openCreate} />}
           {selected?.type === "item" && (
-            <ItemDetail key={selected.id} id={selected.id} onChanged={reload} notify={notify} onSelect={select} />
+            <ItemDetail
+              key={selected.id}
+              id={selected.id}
+              onChanged={reload}
+              notify={notify}
+              onSelect={select}
+              refreshToken={refreshToken}
+            />
           )}
           {selected && selected.type !== "item" && flat && (
             <ContainerDetail

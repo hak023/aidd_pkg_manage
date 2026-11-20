@@ -32,7 +32,7 @@ async function seed() {
 describe("트리 저장소", () => {
   it("마이그레이션은 두 번 실행해도 안전", async () => {
     const h = await createHandle({ url: "", pgliteDir: "memory://" });
-    expect(await migrate(h)).toEqual(["0001_init"]);
+    expect(await migrate(h)).toEqual(["0001_init", "0002_mail"]);
     expect(await migrate(h)).toEqual([]);
   });
 

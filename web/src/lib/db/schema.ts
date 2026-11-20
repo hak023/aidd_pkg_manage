@@ -1,4 +1,5 @@
 import {
+  boolean,
   integer,
   pgTable,
   serial,
@@ -53,6 +54,66 @@ export const events = pgTable("events", {
   message: text("message").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * 메일 (P2). 발송(out)과 수신(in)을 함께 기록한다.
+ * - out: status = sent | simulated
+ * - in:  status = matched | unmatched | ignored
+ */
+export const mails = pgTable("mails", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id"),
+  direction: text("direction").$type<MailDirection>().notNull(),
+  kind: text("kind").$type<MailKind>().notNull(),
+  status: text("status").$type<MailStatus>().notNull(),
+  matchMethod: text("match_method").$type<MatchMethod>(),
+  messageId: text("message_id"),
+  inReplyTo: text("in_reply_to"),
+  refs: text("refs").notNull().default(""),
+  fromAddr: text("from_addr").notNull().default(""),
+  toAddrs: text("to_addrs").notNull().default(""),
+  subject: text("subject").notNull().default(""),
+  bodyText: text("body_text").notNull().default(""),
+  simulated: boolean("simulated").notNull().default(false),
+  mailDate: timestamp("mail_date", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** 메일 첨부. 텍스트 파일(md 등)은 내용까지 저장한다. */
+export const mailAttachments = pgTable("mail_attachments", {
+  id: serial("id").primaryKey(),
+  mailId: integer("mail_id").notNull(),
+  filename: text("filename").notNull(),
+  contentType: text("content_type").notNull().default(""),
+  size: integer("size").notNull().default(0),
+  content: text("content"),
+});
+
+/** 시뮬레이터 가상 받은편지함: 주입된 메일이 다음 '메일 확인' 때 처리된다. */
+export const simInbox = pgTable("sim_inbox", {
+  id: serial("id").primaryKey(),
+  payload: text("payload").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+});
+
+/** 키-값 상태 (IMAP 마지막 UID 등) */
+export const appState = pgTable("app_state", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
+export type MailDirection = "out" | "in";
+export type MailKind =
+  | "collect_request"
+  | "progress_request"
+  | "share"
+  | "collect_reply"
+  | "progress_reply"
+  | "doc_forward"
+  | "other";
+export type MailStatus = "sent" | "simulated" | "matched" | "unmatched" | "ignored";
+export type MatchMethod = "tag" | "header" | "marker" | "manual";
 
 export type NodeType = "service" | "label" | "item";
 export type StageKey = "collect" | "review" | "prd" | "arch" | "qa" | "progress" | "done";
