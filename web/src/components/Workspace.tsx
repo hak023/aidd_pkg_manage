@@ -195,7 +195,7 @@ export default function Workspace() {
   return (
     <div className="flex-1 flex flex-col h-screen">
       <header className="h-12 shrink-0 flex items-center justify-between px-4 bg-panel border-b border-line">
-        <button className="flex items-baseline gap-2" onClick={() => select(null)} title="대시보드로">
+        <button className="flex items-center gap-2" onClick={() => select(null)} title="대시보드로">
           <BrandName />
           <span className="text-muted text-[12px] hidden sm:inline">{BRAND_SUBTITLE}</span>
         </button>
