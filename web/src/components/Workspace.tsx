@@ -14,6 +14,7 @@ import ItemDetail from "./ItemDetail";
 import ContainerDetail from "./ContainerDetail";
 import MailInbox from "./MailInbox";
 import Settings from "./Settings";
+import { BRAND_SUBTITLE, BrandName } from "./Brand";
 
 type Page = "inbox" | "settings";
 /** 사이트를 열어 둔 동안 자동 메일 확인 주기 */
@@ -195,8 +196,8 @@ export default function Workspace() {
     <div className="flex-1 flex flex-col h-screen">
       <header className="h-12 shrink-0 flex items-center justify-between px-4 bg-panel border-b border-line">
         <button className="flex items-baseline gap-2" onClick={() => select(null)} title="대시보드로">
-          <span className="font-bold tracking-tight text-[15px]">AX_AIDD</span>
-          <span className="text-muted text-[12px] hidden sm:inline">개발 산출물 작성 지원</span>
+          <BrandName />
+          <span className="text-muted text-[12px] hidden sm:inline">{BRAND_SUBTITLE}</span>
         </button>
         <div className="flex items-center gap-2">
           {mailState && mailState.mode !== "gmail" && (

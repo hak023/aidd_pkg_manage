@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client-api";
+import { BRAND_SUBTITLE, BrandName } from "@/components/Brand";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,8 +30,8 @@ export default function LoginPage() {
     <main className="flex-1 flex items-center justify-center px-4">
       <form onSubmit={submit} className="w-full max-w-sm bg-panel border border-line rounded-xl p-7 shadow-sm">
         <div className="mb-6">
-          <div className="text-xs font-semibold tracking-wider text-accent">AX_AIDD</div>
-          <h1 className="text-xl font-bold mt-1">개발 산출물 작성 지원</h1>
+          <BrandName size="lg" />
+          <h1 className="text-[15px] font-semibold mt-1 text-muted">{BRAND_SUBTITLE}</h1>
           <p className="text-muted text-[13px] mt-1">설정된 계정으로 로그인하세요.</p>
         </div>
         <label className="block text-[13px] font-medium mb-1" htmlFor="id">
