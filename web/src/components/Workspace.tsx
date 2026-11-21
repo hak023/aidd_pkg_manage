@@ -43,6 +43,8 @@ export default function Workspace() {
   const [mailState, setMailState] = useState<MailStatusDTO | null>(null);
   const [polling, setPolling] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [me, setMe] = useState<{ id: string; name: string } | null>(null);
+  const [seeding, setSeeding] = useState(false);
   const pollingRef = useRef(false);
 
   const reload = useCallback(async () => {
@@ -106,6 +108,9 @@ export default function Workspace() {
       apply();
       void reload();
       void loadMailState();
+      api<{ id: string; name: string }>("/api/auth/me")
+        .then(setMe)
+        .catch(() => undefined);
     });
     const onHash = apply;
     window.addEventListener("hashchange", onHash);
@@ -149,6 +154,39 @@ export default function Workspace() {
     router.refresh();
   }
 
+  /** 시연 데이터만 초기화 후 재생성 (실제 업무 데이터는 유지, 모든 사용자에게 공유되는 자료) */
+  async function resetDemo() {
+    if (
+      !window.confirm(
+        "시연 데이터를 모두 지우고 새로 만듭니다.\n\n" +
+          "· 모든 사용자가 함께 보는 시연 데이터가 바뀌며 되돌릴 수 없습니다.\n" +
+          "· 실제 업무 데이터는 지우지 않습니다.\n\n계속할까요?",
+      )
+    ) {
+      return;
+    }
+    setSeeding(true);
+    try {
+      const r = await api<{ summary: { services: number; labels: number; items: number } }>("/api/demo/seed", {
+        method: "POST",
+        body: { action: "seed" },
+      });
+      select(null);
+      await reload();
+      await loadMailState();
+      setRefreshToken((t) => t + 1);
+      setToast({
+        kind: "ok",
+        text: `시연 데이터를 새로 만들었습니다: 단위서비스 ${r.summary.services}개, 라벨링 ${r.summary.labels}개, 개발사항 ${r.summary.items}개`,
+      });
+    } catch (e) {
+      setToast({ kind: "error", text: `시연 데이터 초기화 실패: ${(e as Error).message}` });
+      await reload();
+    } finally {
+      setSeeding(false);
+    }
+  }
+
   function openCreate(type: NodeType, parentId: number | null) {
     setCreate({ type, parentId });
   }
@@ -172,6 +210,14 @@ export default function Workspace() {
               {mailState.mode === "simulator" ? "시뮬레이터 모드" : "메일 설정 필요"}
             </button>
           )}
+          <button
+            onClick={resetDemo}
+            disabled={seeding}
+            className="border border-line rounded-md px-3 py-1.5 text-[13px] hover:border-warn hover:text-warn disabled:opacity-50"
+            title="시연 데이터만 지우고 6개 단위서비스 시연 데이터를 새로 만듭니다 (실제 업무 데이터는 유지)"
+          >
+            {seeding ? "초기화 중…" : "시연 데이터 초기화"}
+          </button>
           <button
             onClick={() => poll(true)}
             disabled={polling}
@@ -205,6 +251,11 @@ export default function Workspace() {
           >
             + 새로 만들기
           </button>
+          {me && (
+            <span className="text-[12px] text-muted px-1" title={`로그인: ${me.id}`}>
+              {me.name}
+            </span>
+          )}
           <button onClick={logout} className="text-muted text-[13px] px-2 py-1.5 hover:text-ink">
             로그아웃
           </button>
@@ -251,7 +302,6 @@ export default function Workspace() {
                 await reload();
                 await loadMailState();
               }}
-              onOpenDashboard={() => select(null)}
             />
           )}
           {!selected && !page && <Dashboard flat={flat ?? []} loading={flat === null} onSelect={select} onCreate={openCreate} />}

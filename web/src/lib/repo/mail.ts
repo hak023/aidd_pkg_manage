@@ -5,6 +5,7 @@ import {
   devItems,
   mailAttachments,
   mails,
+  nodes,
   simInbox,
   stages,
   type MailKind,
@@ -116,9 +117,10 @@ async function setState(key: string, value: string) {
 
 function requireUsable(cfg: MailConfig) {
   if (cfg.mode === "unconfigured") {
+    const n = cfg.envNames;
     throw new DomainError(
       503,
-      "메일 설정이 없습니다. GMAIL_ADDRESS, GMAIL_APP_PASSWORD, COLLECT_TO_ADDRESS 환경 변수를 설정하세요.",
+      `메일 설정이 없습니다. 관리자에게 ${n.gmailAddress}, ${n.appPassword}, ${n.collectTo} 환경 변수 설정을 요청하세요.`,
     );
   }
 }
@@ -130,9 +132,36 @@ async function checkDailyLimit(cfg: MailConfig) {
   const [r] = await db
     .select({ n: count() })
     .from(mails)
-    .where(and(eq(mails.direction, "out"), eq(mails.status, "sent"), gte(mails.createdAt, since)));
+    .where(
+      and(
+        eq(mails.direction, "out"),
+        eq(mails.status, "sent"),
+        eq(mails.isDemo, false),
+        eq(mails.account, cfg.account),
+        gte(mails.createdAt, since),
+      ),
+    );
   if ((r?.n ?? 0) >= cfg.dailyLimit) {
     throw new DomainError(429, `최근 24시간 발송 한도(${cfg.dailyLimit}건)에 도달했습니다. MAIL_DAILY_LIMIT로 조정할 수 있습니다.`);
+  }
+}
+
+/**
+ * 시연 개발사항에서 실제 Gmail로 보낼 때는 본인 계정 주소(수집 요청 주소·Gmail 주소)로만 보낸다.
+ * 시연 자료의 담당자 주소로 실제 메일이 나가지 않게 한다.
+ */
+async function guardDemoRecipients(cfg: MailConfig, itemId: number | null, to: string[]) {
+  if (cfg.mode !== "gmail" || itemId === null) return;
+  const { db } = await getHandle();
+  const [n] = await db.select({ isDemo: nodes.isDemo }).from(nodes).where(eq(nodes.id, itemId));
+  if (!n?.isDemo) return;
+  const own = new Set([cfg.collectTo.toLowerCase(), cfg.gmailAddress.toLowerCase()]);
+  const others = to.filter((a) => !own.has(a.trim().toLowerCase()));
+  if (others.length) {
+    throw new DomainError(
+      400,
+      `시연 데이터 개발사항은 실제 메일을 본인 수집 요청 주소로만 보낼 수 있습니다. 제외할 주소: ${others.join(", ")}`,
+    );
   }
 }
 
@@ -144,6 +173,7 @@ export async function sendAndRecord(
   mail: OutgoingMail,
 ): Promise<MailSummaryDTO> {
   requireUsable(cfg);
+  await guardDemoRecipients(cfg, itemId, mail.to);
   await checkDailyLimit(cfg);
   const messageId = newMessageId(code);
   const simulated = cfg.mode === "simulator";
@@ -170,6 +200,7 @@ export async function sendAndRecord(
       subject: mail.subject,
       bodyText: mail.text,
       simulated,
+      account: cfg.account,
     })
     .returning();
   if (mail.attachments?.length) {
@@ -231,38 +262,43 @@ export interface PollResult {
   at: string;
 }
 
-type GlobalWithPoll = typeof globalThis & { __aiddPolling?: Promise<PollResult> };
+type GlobalWithPoll = typeof globalThis & { __aiddPolling?: Map<string, Promise<PollResult>> };
 const g = globalThis as GlobalWithPoll;
 
-/** 메일 확인. 동시에 여러 번 눌려도 한 번만 실행한다. */
+/** 메일함별 상태 키 (사용자마다 Gmail 수신 위치를 따로 둔다) */
+const stateKey = (key: string, cfg: MailConfig) => `${key}:${cfg.account}`;
+
+/** 로그인 사용자의 메일함 확인. 같은 메일함에 동시에 여러 번 요청되어도 한 번만 실행한다. */
 export function pollMail(): Promise<PollResult> {
-  if (!g.__aiddPolling) {
-    g.__aiddPolling = doPoll().finally(() => {
-      g.__aiddPolling = undefined;
-    });
+  const cfg = getMailConfig();
+  if (!g.__aiddPolling) g.__aiddPolling = new Map();
+  const running = g.__aiddPolling;
+  let p = running.get(cfg.account);
+  if (!p) {
+    p = doPoll(cfg).finally(() => running.delete(cfg.account));
+    running.set(cfg.account, p);
   }
-  return g.__aiddPolling;
+  return p;
 }
 
-async function doPoll(): Promise<PollResult> {
-  const cfg = getMailConfig();
+async function doPoll(cfg: MailConfig): Promise<PollResult> {
   requireUsable(cfg);
   const { db } = await getHandle();
   let inbound: InboundMail[] = [];
 
   if (cfg.mode === "gmail") {
     const prev: FetchState = {
-      uidValidity: await getState("imap_uid_validity"),
-      lastUid: Number(await getState("imap_last_uid")) || 0,
+      uidValidity: await getState(stateKey("imap_uid_validity", cfg)),
+      lastUid: Number(await getState(stateKey("imap_last_uid", cfg))) || 0,
     };
     try {
       const r = await fetchViaImap(cfg, prev);
       inbound = r.mails;
       // 처리 전에 위치를 저장하면 실패 시 메일을 놓칠 수 있으므로, 처리 후 저장한다
       const result = await ingestAll(cfg, inbound, false);
-      await setState("imap_uid_validity", r.state.uidValidity ?? "");
-      await setState("imap_last_uid", String(r.state.lastUid));
-      await setState("last_poll_at", result.at);
+      await setState(stateKey("imap_uid_validity", cfg), r.state.uidValidity ?? "");
+      await setState(stateKey("imap_last_uid", cfg), String(r.state.lastUid));
+      await setState(stateKey("last_poll_at", cfg), result.at);
       return result;
     } catch (e) {
       if (e instanceof DomainError) throw e;
@@ -284,7 +320,7 @@ async function doPoll(): Promise<PollResult> {
       .where(inArray(simInbox.id, rows.map((r) => r.id)));
   }
   const result = await ingestAll(cfg, inbound, true);
-  await setState("last_poll_at", result.at);
+  await setState(stateKey("last_poll_at", cfg), result.at);
   return result;
 }
 
@@ -364,6 +400,7 @@ export async function ingestMail(
       subject: m.subject,
       bodyText: m.text,
       simulated,
+      account: cfg.account,
       mailDate: m.date,
     })
     .returning();
@@ -527,7 +564,7 @@ export async function mailStatus(): Promise<MailStatusDTO> {
   return {
     mode: cfg.mode,
     unmatched: Number(u?.n ?? 0),
-    lastPollAt: await getState("last_poll_at"),
+    lastPollAt: await getState(stateKey("last_poll_at", cfg)),
     pendingSimulated: Number(p?.n ?? 0),
   };
 }

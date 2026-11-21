@@ -1,28 +1,39 @@
 import { connection } from "next/server";
 import { respond } from "@/lib/api";
-import { getAuthConfig } from "@/lib/auth";
+import { getAuthConfig, isMultiUser } from "@/lib/auth";
 import { getMailConfig, MAIL_MODE_LABEL } from "@/lib/mail/config";
+import { currentUser } from "@/lib/session";
 
-/** 설정 화면: 현재 config 확인 (비밀값은 설정 여부만 표시) */
+/** 설정 화면: 현재 로그인 사용자 기준 config 확인 (비밀값은 설정 여부만 표시, 다른 사용자 정보는 보이지 않음) */
 export async function GET() {
   await connection();
   return respond(async () => {
     const mail = getMailConfig();
     const auth = getAuthConfig();
+    const user = currentUser();
     const set = (v: string | undefined) => (v && v.trim() ? "설정됨" : "없음");
+    const n = mail.envNames;
     return {
       mailMode: mail.mode,
       mailModeLabel: MAIL_MODE_LABEL[mail.mode],
+      user: user ? { id: user.id, name: user.name } : null,
+      multiUser: isMultiUser(),
       rows: [
-        { key: "LOGIN_ID / LOGIN_PASSWORD", value: auth?.usingDevDefaults ? "개발용 기본값 사용 중" : "설정됨" },
+        {
+          key: isMultiUser() ? "AUTH_USERS (다중 사용자)" : "LOGIN_ID / LOGIN_PASSWORD",
+          value: isMultiUser()
+            ? `${auth?.users.length ?? 0}명 사용 가능 · 현재 ${user?.id ?? "-"}`
+            : auth?.usingDevDefaults
+              ? "개발용 기본값 사용 중"
+              : "설정됨",
+        },
         { key: "AUTH_SECRET", value: set(process.env.AUTH_SECRET) },
         { key: "DATABASE_URL", value: process.env.DATABASE_URL ? "Neon (설정됨)" : "로컬 PGlite" },
         { key: "SIMULATOR_MODE", value: process.env.SIMULATOR_MODE || "(비어 있음)" },
-        { key: "GMAIL_ADDRESS", value: process.env.GMAIL_ADDRESS || "없음" },
-        { key: "GMAIL_APP_PASSWORD", value: set(process.env.GMAIL_APP_PASSWORD) },
-        { key: "COLLECT_TO_ADDRESS", value: process.env.COLLECT_TO_ADDRESS || "없음" },
-        { key: "POLL_SECRET", value: set(process.env.POLL_SECRET) },
-        { key: "MAIL_DAILY_LIMIT", value: String(mail.dailyLimit) },
+        { key: n.gmailAddress, value: mail.gmailAddress || "없음" },
+        { key: n.appPassword, value: mail.appPassword ? "설정됨" : "없음" },
+        { key: n.collectTo, value: mail.collectTo || "없음" },
+        { key: "MAIL_DAILY_LIMIT", value: `${mail.dailyLimit} (계정별)` },
         { key: "MAIL_LOOKBACK_DAYS", value: String(mail.initialLookbackDays) },
         { key: "GEMINI_API_KEY", value: set(process.env.GEMINI_API_KEY) },
         { key: "GEMINI_MODEL", value: process.env.GEMINI_MODEL || "(비어 있음 → Flash-Lite 자동 선택)" },

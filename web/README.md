@@ -28,7 +28,8 @@ npm run dev          # http://localhost:3000
 | `npm test` | 단위·저장소 테스트 (Vitest + 메모리 PGlite) |
 | `npm run typecheck` | Next 라우트 타입 생성 후 TypeScript 검사 |
 | `npm run lint` | ESLint |
-| `npm run seed:demo` | 전체 데이터 초기화 후 6개 단위서비스 기준 시연 데이터 일괄 생성 (`-- --clear`로 비우기) |
+| `npm run seed:demo` | 시연 데이터만 초기화 후 6개 단위서비스 시연 데이터 재생성 (`-- --clear`로 시연 데이터만 비우기). 실제 업무 데이터는 유지 |
+| `npm run hash-password` | 다중 사용자 비밀번호 해시 생성 (`USER_<ID>_PASSWORD_HASH`에 넣음) |
 
 > Windows의 Git Bash에서 `/c/...` 경로로 `npm test`를 실행하면 Vitest가 모듈을 두 번 불러와 실패할 수 있습니다. PowerShell이나 `C:\` 경로에서 실행하세요.
 
@@ -41,14 +42,14 @@ src/
     login/                 더미 로그인 화면
     page.tsx               메인 (트리 + 대시보드/상세)
     api/
-      auth/login|logout    로그인 쿠키 발급·삭제
+      auth/login|logout|me 로그인 쿠키 발급·삭제, 현재 사용자
       tree                 전체 트리 + 개발사항 요약
       nodes, nodes/[id]    생성 / 이름 변경·이동·삭제
       items/[id]           개발사항 상세·수집 조건
       items/[id]/stages    단계 상태 변경
       items/[id]/collect-request  수집 요청 메일 미리보기(GET)·발송(POST)
       items/[id]/mails     개발사항의 메일 이력
-      mail/poll            메일 확인 (POST: 화면 버튼, GET ?secret=: 외부 크론)
+      mail/poll            로그인 사용자의 메일함 확인 (POST: 화면 버튼·자동 확인)
       mail/status          모드·미분류 개수·마지막 확인 시각
       mails, mails/[id]    미분류함 목록 / 메일 보기·지정·무시·되돌리기
       settings             현재 config (비밀값은 설정 여부만)
@@ -62,11 +63,12 @@ src/
       items/[id]/progress-request  진행상황 요청 메일 미리보기(GET)·발송(POST)
       items/[id]/progress  진행상황 기록·이력(GET), 다시 해석·직접 입력(POST)
       sim/scenario         전체 시나리오 1~7단계 자동 실행 (시뮬레이터 모드)
-      demo/seed            전체 데이터 초기화 및 6개 단위서비스 시연 데이터 일괄 생성
+      demo/seed            시연 데이터(is_demo)만 초기화 후 재생성 (머리글 버튼, 로그인한 모든 사용자)
       items/[id]/documents 문서 버전 목록·편집본 저장 · documents/[id] 원문(?download=1)
   components/              화면 컴포넌트 (Workspace, TreePanel, ItemDetail, Mail, MailInbox, Settings …)
   lib/
-    auth.ts                더미 로그인과 HMAC 서명 쿠키
+    auth.ts                로그인(단일 계정 또는 AUTH_USERS 다중 사용자, scrypt 해시)과 HMAC 서명 쿠키
+    session.ts             요청별 로그인 사용자 문맥 (메일 config가 사용자별 값을 읽음)
     demo/                  6개 단위서비스·라벨링·개발사항 카탈로그 및 1~7단계 실무형 산출물 빌더
     db/                    Drizzle 스키마, 연결(Neon/PGlite), SQL 마이그레이션
     domain/                단계 정의, 트리 배치 규칙, 메일 태그·파일명 규칙

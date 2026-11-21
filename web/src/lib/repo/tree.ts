@@ -128,6 +128,8 @@ export async function createNode(input: {
       name,
       parentId: parent?.id ?? null,
       sortOrder: await nextSortOrder(parent?.id ?? null),
+      // 시연 자료 아래에 만든 항목은 시연 자료로 함께 관리한다 (초기화 때 함께 삭제)
+      isDemo: parent?.isDemo ?? false,
     })
     .returning();
 
@@ -168,6 +170,9 @@ export async function moveNode(id: number, newParentId: number | null) {
   if (newParentId !== null && !parent) throw notFound("이동할 위치");
   const err = placementError(n.type, parent?.type ?? null);
   if (err) throw badRequest(err);
+  if (parent && parent.isDemo !== n.isDemo) {
+    throw badRequest("시연 데이터와 실제 업무 데이터 사이에서는 옮길 수 없습니다.");
+  }
 
   const { db } = await getHandle();
   await db

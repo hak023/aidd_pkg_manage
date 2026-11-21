@@ -1,7 +1,7 @@
 /**
  * 연결 테스트 (설정 화면). 결과에는 비밀값을 넣지 않는다.
  */
-import { getMailConfig } from "@/lib/mail/config";
+import { getMailConfig, SIM_COLLECT_TO, SIM_GMAIL_ADDRESS } from "@/lib/mail/config";
 import { getGeminiConfig, listModels, pickFlashLite, generateText } from "@/lib/llm/gemini";
 
 export interface CheckStep {
@@ -14,14 +14,16 @@ function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** Gmail: SMTP 로그인 확인, IMAP 로그인·받은편지함 확인, (선택) 회사 주소로 테스트 메일 1통 */
+/** Gmail: SMTP 로그인 확인, IMAP 로그인·받은편지함 확인, (선택) 회사 주소로 테스트 메일 1통. 로그인 사용자의 계정 기준 */
 export async function testGmail(opts: { send: boolean }): Promise<CheckStep[]> {
   const cfg = getMailConfig();
   const steps: CheckStep[] = [];
+  const n = cfg.envNames;
+  // 시뮬레이터 기본 주소는 실제 설정값이 아니다
   const missing = [
-    process.env.GMAIL_ADDRESS?.trim() ? null : "GMAIL_ADDRESS",
-    process.env.GMAIL_APP_PASSWORD?.trim() ? null : "GMAIL_APP_PASSWORD",
-    process.env.COLLECT_TO_ADDRESS?.trim() ? null : "COLLECT_TO_ADDRESS",
+    cfg.gmailAddress && cfg.gmailAddress !== SIM_GMAIL_ADDRESS ? null : n.gmailAddress,
+    cfg.appPassword ? null : n.appPassword,
+    cfg.collectTo && cfg.collectTo !== SIM_COLLECT_TO ? null : n.collectTo,
   ].filter(Boolean);
   steps.push({
     name: "설정값",
@@ -32,7 +34,7 @@ export async function testGmail(opts: { send: boolean }): Promise<CheckStep[]> {
   });
   if (missing.length) return steps;
 
-  const auth = { user: process.env.GMAIL_ADDRESS!.trim(), pass: process.env.GMAIL_APP_PASSWORD!.replace(/\s+/g, "") };
+  const auth = { user: cfg.gmailAddress, pass: cfg.appPassword };
 
   const nodemailer = await import("nodemailer");
   const smtp = nodemailer.createTransport({ host: "smtp.gmail.com", port: 465, secure: true, auth });
@@ -64,10 +66,10 @@ export async function testGmail(opts: { send: boolean }): Promise<CheckStep[]> {
 
   if (opts.send && steps.every((s) => s.ok)) {
     try {
-      // 자동 발송 허용 대상(COLLECT_TO_ADDRESS)으로만 보낸다
+      // 자동 발송 허용 대상(로그인 사용자의 수집 요청 주소)으로만 보낸다
       const info = await smtp.sendMail({
         from: `AX_AIDD 시스템 <${auth.user}>`,
-        to: process.env.COLLECT_TO_ADDRESS!.trim(),
+        to: cfg.collectTo,
         subject: "[AX_AIDD시스템] 메일 연결 테스트",
         text: [
           "AX_AIDD 시스템의 메일 연결 테스트입니다.",

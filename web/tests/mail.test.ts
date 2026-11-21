@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { createHandle, getHandle, migrate, setHandleForTest } from "@/lib/db/client";
 import { mails } from "@/lib/db/schema";
 import { getMailConfig } from "@/lib/mail/config";
+import type { AuthUser } from "@/lib/auth";
+import { runWithUser } from "@/lib/session";
 import { composeCollectRequest, replyStartMarker, REPLY_END_MARKER } from "@/lib/mail/compose";
 import { detectKind, isRelevant, matchMail, type InboundMail } from "@/lib/mail/match";
 import {
@@ -135,6 +137,33 @@ describe("메일 저장소 (시뮬레이터)", () => {
     const c = getMailConfig();
     expect(c.mode).toBe("gmail");
     expect(c.appPassword).toBe("abcdefghijklmnop");
+  });
+
+  it("TC-P2-14 다중 사용자: 로그인 사용자의 메일 설정만 쓰고, 사용자 문맥이 없으면 송수신하지 않는다", () => {
+    vi.stubEnv("SIMULATOR_MODE", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("GMAIL_ADDRESS", "global@example.com");
+    vi.stubEnv("GMAIL_APP_PASSWORD", "global-pass");
+    vi.stubEnv("AUTH_USERS", "alpha,bravo");
+    const user = (id: string, mail: AuthUser["mail"]): AuthUser => ({ id, name: id, passwordHash: "scrypt$x$y", mail });
+
+    expect(getMailConfig().mode).toBe("unconfigured");
+    expect(getMailConfig().gmailAddress).toBe("");
+
+    const alpha = runWithUser(
+      user("alpha", { gmailAddress: "Alpha@Example.com", appPassword: "pa", collectTo: "alpha-co@example.com" }),
+      () => getMailConfig(),
+    );
+    expect(alpha).toMatchObject({
+      mode: "gmail",
+      gmailAddress: "Alpha@Example.com",
+      collectTo: "alpha-co@example.com",
+      account: "alpha@example.com",
+    });
+
+    const bravo = runWithUser(user("bravo", { gmailAddress: "", appPassword: "", collectTo: "" }), () => getMailConfig());
+    expect(bravo.mode).toBe("unconfigured");
+    expect(bravo.envNames.appPassword).toBe("USER_BRAVO_GMAIL_APP_PASSWORD");
   });
 
   it("TC-P2-07 1단계 전체 흐름: 발송 → 회신 주입 → 메일 확인 → 수집 완료, 검토 진행중", async () => {

@@ -159,4 +159,19 @@ CREATE TABLE progress_reports (
 CREATE INDEX progress_reports_item_idx ON progress_reports(item_id, id);
 `,
   },
+  {
+    // 시연 데이터 범위 분리와 계정별 메일 기록 (2026-11-22).
+    // 사용자 확인: 이 시점까지의 자료는 모두 시연 데이터이므로 시연으로 표시한다.
+    id: "0006_demo_scope_accounts",
+    sql: `
+ALTER TABLE nodes ADD COLUMN is_demo boolean NOT NULL DEFAULT false;
+UPDATE nodes SET is_demo = true;
+CREATE INDEX nodes_is_demo_idx ON nodes(is_demo);
+ALTER TABLE mails ADD COLUMN is_demo boolean NOT NULL DEFAULT false;
+ALTER TABLE mails ADD COLUMN account text NOT NULL DEFAULT '';
+UPDATE mails SET is_demo = true;
+UPDATE mails SET account = lower(from_addr) WHERE direction = 'out' AND from_addr NOT LIKE '%<%';
+CREATE INDEX mails_account_idx ON mails(account, direction, created_at);
+`,
+  },
 ];

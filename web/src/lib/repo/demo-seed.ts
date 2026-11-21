@@ -1,5 +1,5 @@
 /**
- * 시연용 데이터 전체 초기화 및 일괄 생성 엔진.
+ * 시연용 데이터 초기화 및 일괄 생성 엔진. 시연 데이터(is_demo)만 지우고 다시 만든다.
  * - 6개 단위서비스 × 각 3개 라벨링 × 라벨링당 2~4개 개발사항(랜덤)
  * - 개발사항별 진행 단계 1~7(랜덤) 및 단계에 부합하는 메일·점검·문서·마일스톤·이력 일괄 적재
  * - Neon HTTP 환경에서도 수 초 내 완료되도록 테이블별 청크 배치 INSERT로 처리한다.
@@ -42,6 +42,7 @@ import { docFileName, formatDevCode } from "@/lib/domain/naming";
 import { STAGE_KEYS } from "@/lib/domain/stages";
 import { progressShareSubject, progressShareText } from "./progress";
 import { shareSubject } from "./docs";
+import { DomainError } from "./errors";
 
 export interface DemoSeedSummary {
   services: number;
@@ -94,13 +95,62 @@ function shuffle<T>(rng: () => number, list: readonly T[]): T[] {
   return a;
 }
 
-/** 모든 업무 테이블과 개발사항 코드 시퀀스를 초기화한다 (IMAP 연동 오프셋인 app_state는 유지). */
-export async function clearAllDemoData(): Promise<void> {
+/**
+ * 시연 데이터만 지운다. 실제 업무 데이터(is_demo = false)는 건드리지 않는다.
+ * - 시연 개발사항에 매칭된 실제 수신 메일은 미분류함으로 되돌린다.
+ * - 개발사항 코드 시퀀스는 되돌리지 않는다(실제 자료와 코드가 겹치지 않게).
+ */
+export async function clearDemoData(): Promise<void> {
   const h = await getHandle();
   await h.query(
-    "TRUNCATE TABLE progress_reports, documents, reviews, mail_attachments, mails, sim_inbox, events, stages, dev_items, nodes RESTART IDENTITY CASCADE",
+    `UPDATE mails SET item_id = NULL, status = 'unmatched', match_method = NULL
+       WHERE is_demo = false AND direction = 'in' AND status = 'matched'
+         AND item_id IN (SELECT id FROM nodes WHERE is_demo = true)`,
   );
-  await h.query("ALTER SEQUENCE dev_code_seq RESTART WITH 1");
+  await h.query("DELETE FROM mails WHERE is_demo = true");
+  await h.query("DELETE FROM nodes WHERE is_demo = true");
+}
+
+const LOCK_KEY = "demo_reset_lock";
+const LOCK_TTL_MS = 5 * 60_000;
+
+/** 여러 사용자가 동시에 눌러도 한 번만 실행되도록 DB에 잠금을 둔다 (5분 뒤 자동 만료). */
+async function acquireDemoLock(): Promise<boolean> {
+  const h = await getHandle();
+  const now = Date.now();
+  const rows = await h.query(
+    `INSERT INTO app_state (key, value) VALUES ($1, $2)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value WHERE app_state.value < $3
+       RETURNING key`,
+    [LOCK_KEY, String(now), String(now - LOCK_TTL_MS)],
+  );
+  return rows.length > 0;
+}
+
+async function releaseDemoLock() {
+  const h = await getHandle();
+  await h.query("DELETE FROM app_state WHERE key = $1", [LOCK_KEY]);
+}
+
+/**
+ * 시연 데이터만 초기화하고 다시 생성한다.
+ * 생성 중 실패하면 일부만 생긴 시연 자료를 지우고 오류를 알린다(다시 누르면 복구).
+ */
+export async function resetAndSeedDemoData(opts?: SeedOptions): Promise<DemoSeedSummary> {
+  if (!(await acquireDemoLock())) {
+    throw new DomainError(409, "다른 사용자가 시연 데이터를 초기화하는 중입니다. 잠시 뒤 다시 시도하세요.");
+  }
+  try {
+    await clearDemoData();
+    try {
+      return await seedDemoData(opts);
+    } catch (e) {
+      await clearDemoData().catch((ce) => console.error("[demo] cleanup failed", ce));
+      throw e;
+    }
+  } finally {
+    await releaseDemoLock().catch((e) => console.error("[demo] unlock failed", e));
+  }
 }
 
 interface PendingMail {
@@ -152,14 +202,12 @@ interface PendingReportDoc {
   createdAt: Date;
 }
 
-export async function resetAndSeedDemoData(opts?: SeedOptions): Promise<DemoSeedSummary> {
+async function seedDemoData(opts?: SeedOptions): Promise<DemoSeedSummary> {
   const t0 = Date.now();
   const rng = opts?.rng ?? Math.random;
   const now = opts?.now ?? new Date();
   const h = await getHandle();
   const { db } = h;
-
-  await clearAllDemoData();
 
   const baseSvcCreatedAt = new Date(now.getTime() - 60 * 86_400_000);
 
@@ -172,6 +220,7 @@ export async function resetAndSeedDemoData(opts?: SeedOptions): Promise<DemoSeed
         name: svc.name,
         parentId: null,
         sortOrder: idx,
+        isDemo: true,
         createdAt: new Date(baseSvcCreatedAt.getTime() + idx * 60_000),
       })),
     )
@@ -193,6 +242,7 @@ export async function resetAndSeedDemoData(opts?: SeedOptions): Promise<DemoSeed
         name: ls.label.name,
         parentId: svcRows[ls.svcIdx].id,
         sortOrder: ls.sortOrder,
+        isDemo: true,
         createdAt: new Date(baseSvcCreatedAt.getTime() + (idx + 10) * 60_000),
       })),
     )
@@ -212,7 +262,6 @@ export async function resetAndSeedDemoData(opts?: SeedOptions): Promise<DemoSeed
   }
 
   const plannedItems: PlannedItem[] = [];
-  let seq = 0;
 
   DEMO_CATALOG.forEach((svc, svcIdx) => {
     const pool = shuffle(rng, svc.items);
@@ -225,7 +274,6 @@ export async function resetAndSeedDemoData(opts?: SeedOptions): Promise<DemoSeed
       cursor += count;
 
       chosen.forEach((blueprint, sortOrder) => {
-        seq += 1;
         const targetStage = randInt(rng, 1, 7) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
         // 최근 활동 시각이 자연스럽게 분산되도록 항목별 기준 생성일을 과거 16~52일 사이로 설정
         const daysAgo = 16 + targetStage * 4 + randInt(rng, 0, 10);
@@ -234,7 +282,7 @@ export async function resetAndSeedDemoData(opts?: SeedOptions): Promise<DemoSeed
         );
         plannedItems.push({
           itemIdx: plannedItems.length,
-          code: formatDevCode(seq),
+          code: "", // 아래에서 시퀀스로 부여
           svc,
           label,
           labelNodeId,
@@ -247,6 +295,16 @@ export async function resetAndSeedDemoData(opts?: SeedOptions): Promise<DemoSeed
     });
   });
 
+  // 개발사항 코드는 실제 자료와 같은 시퀀스에서 받아 겹치지 않게 한다
+  const codeRows = await h.query<{ v: number }>(
+    "SELECT nextval('dev_code_seq')::int AS v FROM generate_series(1, $1::int)",
+    [plannedItems.length],
+  );
+  const codes = codeRows.map((r) => Number(r.v)).sort((a, b) => a - b);
+  plannedItems.forEach((p, i) => {
+    p.code = formatDevCode(codes[i]);
+  });
+
   const itemNodeIds = await insertChunked(
     (chunk) => db.insert(nodes).values(chunk).returning({ id: nodes.id }),
     plannedItems.map((p) => ({
@@ -254,11 +312,10 @@ export async function resetAndSeedDemoData(opts?: SeedOptions): Promise<DemoSeed
       name: p.blueprint.title,
       parentId: p.labelNodeId,
       sortOrder: p.sortOrder,
+      isDemo: true,
       createdAt: p.createdAt,
     })),
   );
-
-  await h.query("SELECT setval('dev_code_seq', $1, true)", [plannedItems.length]);
 
   // 4. 단계별 산출물 및 이벤트 조립
   const pendingMails: PendingMail[] = [];
@@ -979,6 +1036,7 @@ export async function resetAndSeedDemoData(opts?: SeedOptions): Promise<DemoSeed
       subject: m.subject,
       bodyText: m.bodyText,
       simulated: false,
+      isDemo: true,
       suggestion: null,
       mailDate: m.mailDate,
       createdAt: m.mailDate,

@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/client-api";
-import type { StageKey } from "@/lib/db/schema";
-import { STAGES } from "@/lib/domain/stages";
 import { SAMPLE_LABEL, type SampleKey } from "@/lib/mail/sample-labels";
-import type { DemoSeedSummary } from "@/lib/repo/demo-seed";
 import type { TreeNodeDTO } from "@/lib/repo/tree";
 import type { Toast } from "./Workspace";
 
@@ -14,25 +11,23 @@ interface SettingsDTO {
   mailModeLabel: string;
   rows: { key: string; value: string }[];
   effective: { from: string; collectTo: string };
+  user: { id: string; name: string } | null;
 }
 
-/** 설정: 현재 config 확인 (비밀값은 설정 여부만), 외부 크론 주소, 시뮬레이터 샘플 메일 */
+/** 설정: 로그인 사용자 기준 config 확인 (비밀값은 설정 여부만), 시뮬레이터 샘플 메일 */
 export default function Settings({
   flat,
   notify,
   onPoll,
   onChanged,
-  onOpenDashboard,
 }: {
   flat: TreeNodeDTO[];
   notify: (t: Toast) => void;
   onPoll: () => Promise<void>;
   onChanged: () => Promise<void>;
-  onOpenDashboard: () => void;
 }) {
   const [s, setS] = useState<SettingsDTO | null>(null);
   const [itemId, setItemId] = useState<string>("");
-  const [origin] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""));
 
   useEffect(() => {
     api<SettingsDTO>("/api/settings")
@@ -58,10 +53,8 @@ export default function Settings({
     <div className="p-6 max-w-4xl space-y-4">
       <h1 className="text-[20px] font-bold">설정</h1>
 
-      <DemoDataSection notify={notify} onChanged={onChanged} onOpenDashboard={onOpenDashboard} />
-
       <section className="bg-panel border border-line rounded-xl p-5">
-        <h2 className="font-semibold mb-1">메일 연동</h2>
+        <h2 className="font-semibold mb-1">메일 연동{s?.user ? ` · ${s.user.name} (${s.user.id})` : ""}</h2>
         {s && (
           <p className="text-[13px] mb-3">
             현재 모드:{" "}
@@ -85,8 +78,9 @@ export default function Settings({
           </tbody>
         </table>
         <p className="text-[12px] text-muted mt-3">
-          값은 환경 변수(로컬은 <span className="font-mono">web/.env.local</span>, 배포는 Vercel 환경 변수)에서 바꿉니다.
-          비밀값은 화면에 표시하지 않습니다.
+          로그인한 계정의 메일 설정만 표시합니다. 값은 관리자가 환경 변수(로컬은{" "}
+          <span className="font-mono">web/.env.local</span>, 배포는 Vercel 환경 변수)에서 바꿉니다. 비밀값은 화면에
+          표시하지 않습니다.
         </p>
       </section>
 
@@ -97,13 +91,8 @@ export default function Settings({
       <section className="bg-panel border border-line rounded-xl p-5">
         <h2 className="font-semibold mb-1">자동 메일 확인</h2>
         <ul className="text-[13px] list-disc pl-5 space-y-1">
-          <li>사이트를 열어 둔 동안 2분마다 자동으로 확인합니다. 머리글의 ‘메일 확인’ 버튼으로 바로 확인할 수도 있습니다.</li>
-          <li>
-            사이트를 닫아 두어도 확인하려면 외부 크론(cron-job.org 등)이 5~10분마다 아래 주소를 호출하게 설정합니다.
-            <div className="font-mono text-[12px] bg-bg rounded px-2 py-1 mt-1 break-all">
-              {origin}/api/mail/poll?secret=<span className="text-accent">POLL_SECRET 값</span>
-            </div>
-          </li>
+          <li>사이트를 열어 둔 동안 2분마다 로그인한 사용자의 Gmail을 자동으로 확인합니다.</li>
+          <li>머리글의 ‘메일 확인’ 버튼으로 바로 확인할 수도 있습니다. 사이트를 닫아 두면 확인하지 않습니다.</li>
         </ul>
       </section>
 
@@ -171,7 +160,7 @@ function ConnectionTest({ notify }: { notify: (t: Toast) => void }) {
   const [result, setResult] = useState<{ title: string; steps: CheckStep[] } | null>(null);
 
   async function run(target: "gmail" | "gemini", send = false) {
-    if (send && !window.confirm("COLLECT_TO_ADDRESS(회사 주소)로 테스트 메일 1통을 보낼까요?")) return;
+    if (send && !window.confirm("내 수집 요청 주소(회사 주소)로 테스트 메일 1통을 보낼까요?")) return;
     setBusy(target + (send ? "-send" : ""));
     try {
       const r = await api<{ steps: CheckStep[] }>("/api/settings/test", { method: "POST", body: { target, send } });
@@ -226,113 +215,6 @@ interface ScenarioResultDTO {
   ok: boolean;
   steps: { no: number; title: string; ok: boolean; detail: string; ms: number }[];
   totalMs: number;
-}
-
-/** 시연용 전체 데이터 초기화 및 일괄 재입력 */
-function DemoDataSection({
-  notify,
-  onChanged,
-  onOpenDashboard,
-}: {
-  notify: (t: Toast) => void;
-  onChanged: () => Promise<void>;
-  onOpenDashboard: () => void;
-}) {
-  const [busy, setBusy] = useState<"seed" | "clear" | null>(null);
-  const [summary, setSummary] = useState<DemoSeedSummary | null>(null);
-
-  async function runSeed() {
-    if (
-      !window.confirm(
-        "현재 저장된 모든 항목·메일·문서를 초기화하고 6개 단위서비스(전국대표번호, 음성링고, 영상링고, AI통화비서, 080착신형AS, 모두의AI) 데이터를 새로 생성할까요?",
-      )
-    ) {
-      return;
-    }
-    setBusy("seed");
-    try {
-      const r = await api<{ summary: DemoSeedSummary }>("/api/demo/seed", {
-        method: "POST",
-        body: { action: "seed" },
-      });
-      setSummary(r.summary);
-      await onChanged();
-      notify({
-        kind: "ok",
-        text: `초기화 완료: 단위서비스 ${r.summary.services}개, 라벨링 ${r.summary.labels}개, 개발사항 ${r.summary.items}개를 생성했습니다.`,
-      });
-    } catch (e) {
-      notify({ kind: "error", text: (e as Error).message });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function runClear() {
-    if (!window.confirm("모든 단위서비스·라벨링·개발사항·메일·산출물을 비울까요?")) return;
-    setBusy("clear");
-    try {
-      await api("/api/demo/seed", { method: "POST", body: { action: "clear" } });
-      setSummary(null);
-      await onChanged();
-      notify({ kind: "ok", text: "모든 데이터를 비웠습니다." });
-    } catch (e) {
-      notify({ kind: "error", text: (e as Error).message });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <section className="bg-panel border border-line rounded-xl p-5">
-      <h2 className="font-semibold mb-1">데이터 초기화 및 일괄 구성</h2>
-      <p className="text-[13px] text-muted mb-3">
-        기존 데이터를 모두 초기화하고 6개 단위서비스(전국대표번호, 음성링고, 영상링고, AI통화비서, 080착신형AS, 모두의AI)에
-        각각 라벨링 3개와 라벨링당 2~4개의 개발사항, 1~7단계별 메일·점검·PRD·설계서·시험항목서·진행상황 산출물을 새로
-        적재합니다. 데이터가 변경되더라도 언제든 다시 초기 구성으로 되돌릴 수 있습니다.
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          onClick={runSeed}
-          disabled={!!busy}
-          className="px-4 py-2 rounded-md bg-accent text-white font-semibold text-[13px] disabled:opacity-40"
-        >
-          {busy === "seed" ? "초기화 및 생성 중…" : "초기화 후 데이터 생성"}
-        </button>
-        <button
-          onClick={runClear}
-          disabled={!!busy}
-          className="px-3 py-2 rounded-md border border-line hover:border-danger text-muted hover:text-danger text-[13px] disabled:opacity-40"
-        >
-          {busy === "clear" ? "비우는 중…" : "전체 비우기"}
-        </button>
-        {summary && (
-          <button
-            onClick={onOpenDashboard}
-            className="px-3 py-2 rounded-md border border-accent text-accent font-semibold text-[13px]"
-          >
-            대시보드로 이동
-          </button>
-        )}
-      </div>
-      {summary && (
-        <div className="mt-4 pt-3 border-t border-line text-[12.5px] space-y-2">
-          <div>
-            생성 결과: <b>단위서비스 {summary.services}개</b> · <b>라벨링 {summary.labels}개</b> ·{" "}
-            <b>개발사항 {summary.items}개</b> · 메일 {summary.mails}건 · 문서 {summary.documents}건 (
-            {(summary.elapsedMs / 1000).toFixed(1)}초)
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {STAGES.map((st) => (
-              <span key={st.key} className="px-2 py-0.5 rounded-full bg-bg border border-line text-[12px]">
-                {st.no}. {st.label}: <b>{summary.stageCounts[st.key as StageKey] ?? 0}</b>건
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </section>
-  );
 }
 
 /** 전체 시나리오 자동 실행 (서비스 정의 7.3): 새 개발사항으로 1~7단계를 차례로 진행하고 결과를 표로 */

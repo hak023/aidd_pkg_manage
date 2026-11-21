@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createHandle, migrate, setHandleForTest } from "@/lib/db/client";
+import { MIGRATIONS } from "@/lib/db/migrations";
 import {
   createNode,
   deleteNode,
@@ -32,8 +33,31 @@ async function seed() {
 describe("트리 저장소", () => {
   it("TC-P1-12 마이그레이션은 두 번 실행해도 안전", async () => {
     const h = await createHandle({ url: "", pgliteDir: "memory://" });
-    expect(await migrate(h)).toEqual(["0001_init", "0002_mail", "0003_prd", "0004_docs", "0005_progress"]);
+    expect(await migrate(h)).toEqual([
+      "0001_init",
+      "0002_mail",
+      "0003_prd",
+      "0004_docs",
+      "0005_progress",
+      "0006_demo_scope_accounts",
+    ]);
     expect(await migrate(h)).toEqual([]);
+  });
+
+  it("TC-P1-28 0006 적용 시 기존 자료는 시연 데이터로, 이후 새 자료는 실제 데이터로 표시", async () => {
+    const h = await createHandle({ url: "", pgliteDir: "memory://" });
+    await h.exec("CREATE TABLE _migrations (id text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());");
+    for (const m of MIGRATIONS.filter((x) => x.id < "0006")) {
+      await h.exec(m.sql);
+      await h.query("INSERT INTO _migrations (id) VALUES ($1)", [m.id]);
+    }
+    await h.query("INSERT INTO nodes (type, name) VALUES ('service', '기존 서비스')");
+    expect(await migrate(h)).toEqual(["0006_demo_scope_accounts"]);
+    await h.query("INSERT INTO nodes (type, name) VALUES ('service', '새 서비스')");
+    expect(await h.query("SELECT name, is_demo FROM nodes ORDER BY id")).toEqual([
+      { name: "기존 서비스", is_demo: true },
+      { name: "새 서비스", is_demo: false },
+    ]);
   });
 
   it("TC-P1-13 생성: 코드 부여, 7단계 대기 상태, 생성 이력", async () => {

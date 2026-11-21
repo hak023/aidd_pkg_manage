@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import { canPlace, placementError } from "@/lib/domain/tree";
 import { currentStage } from "@/lib/domain/stages";
 import { docFileName, formatDevCode, mailTag, parseDevCode } from "@/lib/domain/naming";
-import { checkCredentials, createSessionToken, verifySessionToken } from "@/lib/auth";
+import {
+  checkCredentials,
+  createSessionToken,
+  getAuthConfig,
+  hashPassword,
+  isLoginBlocked,
+  recordLoginFailure,
+  verifySessionToken,
+} from "@/lib/auth";
 
 describe("트리 배치 규칙", () => {
   it("TC-P1-01 단위서비스는 최상위에만", () => {
@@ -55,17 +63,71 @@ describe("이름 규칙", () => {
   });
 });
 
-describe("더미 로그인 토큰", () => {
-  const cfg = { id: "admin", password: "pw", secret: "s".repeat(32), usingDevDefaults: false };
-  it("TC-P1-10 계정 확인", () => {
-    expect(checkCredentials(cfg, "admin", "pw")).toBe(true);
-    expect(checkCredentials(cfg, "admin", "x")).toBe(false);
+describe("로그인과 세션 토큰", () => {
+  const legacy = getAuthConfig({
+    NODE_ENV: "production",
+    LOGIN_ID: "admin",
+    LOGIN_PASSWORD: "pw",
+    AUTH_SECRET: "s".repeat(32),
+  } as NodeJS.ProcessEnv)!;
+  it("TC-P1-10 계정 확인", async () => {
+    expect(legacy.multiUser).toBe(false);
+    expect((await checkCredentials(legacy, "admin", "pw"))?.id).toBe("admin");
+    expect(await checkCredentials(legacy, "admin", "x")).toBeNull();
   });
   it("TC-P1-11 서명·만료·변조", async () => {
-    const t = await createSessionToken(cfg);
-    expect(await verifySessionToken(cfg, t)).toBe(true);
-    expect(await verifySessionToken({ ...cfg, secret: "other".repeat(8) }, t)).toBe(false);
-    expect(await verifySessionToken(cfg, t, Date.now() + 15 * 24 * 3600 * 1000)).toBe(false);
-    expect(await verifySessionToken(cfg, t.slice(0, -2) + "xx")).toBe(false);
+    const t = await createSessionToken(legacy, legacy.users[0]);
+    expect((await verifySessionToken(legacy, t))?.id).toBe("admin");
+    expect(await verifySessionToken({ ...legacy, secret: "other".repeat(8) }, t)).toBeNull();
+    expect(await verifySessionToken(legacy, t, Date.now() + 15 * 24 * 3600 * 1000)).toBeNull();
+    expect(await verifySessionToken(legacy, t.slice(0, -2) + "xx")).toBeNull();
+  });
+
+  it("TC-P1-23 다중 사용자: 해시 비밀번호로 로그인하고 비밀번호 변경·계정 삭제 시 세션 무효", async () => {
+    const hashA = await hashPassword("alpha-pass-1");
+    const hashB = await hashPassword("bravo-pass-2");
+    const env = {
+      NODE_ENV: "production",
+      AUTH_SECRET: "s".repeat(32),
+      AUTH_USERS: "alpha, Bravo, bad id!, nohash",
+      USER_ALPHA_PASSWORD_HASH: hashA,
+      USER_ALPHA_NAME: "알파",
+      USER_ALPHA_GMAIL_ADDRESS: "alpha@example.com",
+      USER_ALPHA_GMAIL_APP_PASSWORD: "aaaa bbbb cccc dddd",
+      USER_ALPHA_COLLECT_TO_ADDRESS: "alpha-company@example.com",
+      USER_BRAVO_PASSWORD_HASH: hashB,
+    } as NodeJS.ProcessEnv;
+    const cfg = getAuthConfig(env)!;
+    expect(cfg.multiUser).toBe(true);
+    expect(cfg.users.map((u) => u.id)).toEqual(["alpha", "bravo"]);
+    expect(cfg.users[0].mail).toEqual({
+      gmailAddress: "alpha@example.com",
+      appPassword: "aaaabbbbccccdddd",
+      collectTo: "alpha-company@example.com",
+    });
+
+    expect((await checkCredentials(cfg, "ALPHA", "alpha-pass-1"))?.name).toBe("알파");
+    expect(await checkCredentials(cfg, "alpha", "bravo-pass-2")).toBeNull();
+    expect(await checkCredentials(cfg, "nohash", "x")).toBeNull();
+
+    const bravo = (await checkCredentials(cfg, "bravo", "bravo-pass-2"))!;
+    const token = await createSessionToken(cfg, bravo);
+    expect((await verifySessionToken(cfg, token))?.id).toBe("bravo");
+
+    const changed = getAuthConfig({ ...env, USER_BRAVO_PASSWORD_HASH: await hashPassword("new-pass-3") })!;
+    expect(await verifySessionToken(changed, token)).toBeNull();
+    const removed = getAuthConfig({ ...env, AUTH_USERS: "alpha" })!;
+    expect(await verifySessionToken(removed, token)).toBeNull();
+  });
+
+  it("TC-P1-24 로그인 실패 5회면 15분 차단", () => {
+    const key = `tc-p1-24-${Date.now()}`;
+    const t0 = 1_000_000;
+    for (let i = 0; i < 5; i++) {
+      expect(isLoginBlocked(key, t0)).toBe(false);
+      recordLoginFailure(key, t0);
+    }
+    expect(isLoginBlocked(key, t0 + 60_000)).toBe(true);
+    expect(isLoginBlocked(key, t0 + 16 * 60_000)).toBe(false);
   });
 });

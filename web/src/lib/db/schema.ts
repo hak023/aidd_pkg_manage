@@ -20,6 +20,8 @@ export const nodes = pgTable("nodes", {
   name: text("name").notNull(),
   parentId: integer("parent_id"),
   sortOrder: integer("sort_order").notNull().default(0),
+  /** 시연 데이터 여부. 상단 '시연 데이터 초기화'는 이 값이 true인 자료만 지우고 다시 만든다. */
+  isDemo: boolean("is_demo").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -77,6 +79,10 @@ export const mails = pgTable("mails", {
   simulated: boolean("simulated").notNull().default(false),
   /** 미분류 메일의 L3 추정 결과 (JSON, P4) */
   suggestion: text("suggestion"),
+  /** 시연 데이터 생성기가 만든 메일 */
+  isDemo: boolean("is_demo").notNull().default(false),
+  /** 발송·수신한 메일 계정 (Gmail 주소, 소문자). 발송 한도를 계정별로 센다 */
+  account: text("account").notNull().default(""),
   mailDate: timestamp("mail_date", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
