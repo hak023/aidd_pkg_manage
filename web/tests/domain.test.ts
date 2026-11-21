@@ -118,6 +118,11 @@ describe("로그인과 세션 토큰", () => {
     expect(await verifySessionToken(changed, token)).toBeNull();
     const removed = getAuthConfig({ ...env, AUTH_USERS: "alpha" })!;
     expect(await verifySessionToken(removed, token)).toBeNull();
+
+    // 한 글자 숫자 ID도 사용할 수 있다 (USER_1_PASSWORD_HASH)
+    const numeric = getAuthConfig({ ...env, AUTH_USERS: "1,2", USER_1_PASSWORD_HASH: hashA } as NodeJS.ProcessEnv)!;
+    expect(numeric.users.map((u) => u.id)).toEqual(["1"]);
+    expect((await checkCredentials(numeric, "1", "alpha-pass-1"))?.id).toBe("1");
   });
 
   it("TC-P1-24 로그인 실패 5회면 15분 차단", () => {

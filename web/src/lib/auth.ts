@@ -15,7 +15,7 @@ export const SESSION_COOKIE = "aidd_session";
 export const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 14; // 14일
 
 const DEV_DEFAULTS = { id: "admin", password: "admin", secret: "aidd-dev-secret-not-for-production" };
-const USER_ID_RE = /^[a-z0-9][a-z0-9_-]{1,31}$/;
+const USER_ID_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 export interface UserMailEnv {
   gmailAddress: string;
