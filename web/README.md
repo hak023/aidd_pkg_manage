@@ -28,6 +28,7 @@ npm run dev          # http://localhost:3000
 | `npm test` | 단위·저장소 테스트 (Vitest + 메모리 PGlite) |
 | `npm run typecheck` | Next 라우트 타입 생성 후 TypeScript 검사 |
 | `npm run lint` | ESLint |
+| `npm run seed:demo` | 전체 데이터 초기화 후 6개 단위서비스 기준 시연 데이터 일괄 생성 (`-- --clear`로 비우기) |
 
 > Windows의 Git Bash에서 `/c/...` 경로로 `npm test`를 실행하면 Vitest가 모듈을 두 번 불러와 실패할 수 있습니다. PowerShell이나 `C:\` 경로에서 실행하세요.
 
@@ -61,10 +62,12 @@ src/
       items/[id]/progress-request  진행상황 요청 메일 미리보기(GET)·발송(POST)
       items/[id]/progress  진행상황 기록·이력(GET), 다시 해석·직접 입력(POST)
       sim/scenario         전체 시나리오 1~7단계 자동 실행 (시뮬레이터 모드)
+      demo/seed            전체 데이터 초기화 및 6개 단위서비스 시연 데이터 일괄 생성
       items/[id]/documents 문서 버전 목록·편집본 저장 · documents/[id] 원문(?download=1)
   components/              화면 컴포넌트 (Workspace, TreePanel, ItemDetail, Mail, MailInbox, Settings …)
   lib/
     auth.ts                더미 로그인과 HMAC 서명 쿠키
+    demo/                  6개 단위서비스·라벨링·개발사항 카탈로그 및 1~7단계 실무형 산출물 빌더
     db/                    Drizzle 스키마, 연결(Neon/PGlite), SQL 마이그레이션
     domain/                단계 정의, 트리 배치 규칙, 메일 태그·파일명 규칙
     mail/                  메일 config·본문 작성·분류/매칭·Gmail SMTP/IMAP·시뮬레이터 샘플

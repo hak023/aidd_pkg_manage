@@ -242,7 +242,18 @@ export default function Workspace() {
               }}
             />
           )}
-          {!selected && page === "settings" && <Settings flat={flat ?? []} notify={notify} onPoll={() => poll(true)} />}
+          {!selected && page === "settings" && (
+            <Settings
+              flat={flat ?? []}
+              notify={notify}
+              onPoll={() => poll(true)}
+              onChanged={async () => {
+                await reload();
+                await loadMailState();
+              }}
+              onOpenDashboard={() => select(null)}
+            />
+          )}
           {!selected && !page && <Dashboard flat={flat ?? []} loading={flat === null} onSelect={select} onCreate={openCreate} />}
           {selected?.type === "item" && (
             <ItemDetail

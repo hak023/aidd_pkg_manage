@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/client-api";
+import type { StageKey } from "@/lib/db/schema";
+import { STAGES } from "@/lib/domain/stages";
 import { SAMPLE_LABEL, type SampleKey } from "@/lib/mail/sample-labels";
+import type { DemoSeedSummary } from "@/lib/repo/demo-seed";
 import type { TreeNodeDTO } from "@/lib/repo/tree";
 import type { Toast } from "./Workspace";
 
@@ -18,10 +21,14 @@ export default function Settings({
   flat,
   notify,
   onPoll,
+  onChanged,
+  onOpenDashboard,
 }: {
   flat: TreeNodeDTO[];
   notify: (t: Toast) => void;
   onPoll: () => Promise<void>;
+  onChanged: () => Promise<void>;
+  onOpenDashboard: () => void;
 }) {
   const [s, setS] = useState<SettingsDTO | null>(null);
   const [itemId, setItemId] = useState<string>("");
@@ -50,6 +57,8 @@ export default function Settings({
   return (
     <div className="p-6 max-w-4xl space-y-4">
       <h1 className="text-[20px] font-bold">설정</h1>
+
+      <DemoDataSection notify={notify} onChanged={onChanged} onOpenDashboard={onOpenDashboard} />
 
       <section className="bg-panel border border-line rounded-xl p-5">
         <h2 className="font-semibold mb-1">메일 연동</h2>
@@ -83,7 +92,7 @@ export default function Settings({
 
       <ConnectionTest notify={notify} />
 
-      {s?.mailMode === "simulator" && <ScenarioRunner notify={notify} />}
+      {s?.mailMode === "simulator" && <ScenarioRunner notify={notify} onChanged={onChanged} />}
 
       <section className="bg-panel border border-line rounded-xl p-5">
         <h2 className="font-semibold mb-1">자동 메일 확인</h2>
@@ -219,8 +228,115 @@ interface ScenarioResultDTO {
   totalMs: number;
 }
 
+/** 시연용 전체 데이터 초기화 및 일괄 재입력 */
+function DemoDataSection({
+  notify,
+  onChanged,
+  onOpenDashboard,
+}: {
+  notify: (t: Toast) => void;
+  onChanged: () => Promise<void>;
+  onOpenDashboard: () => void;
+}) {
+  const [busy, setBusy] = useState<"seed" | "clear" | null>(null);
+  const [summary, setSummary] = useState<DemoSeedSummary | null>(null);
+
+  async function runSeed() {
+    if (
+      !window.confirm(
+        "현재 저장된 모든 항목·메일·문서를 초기화하고 6개 단위서비스(전국대표번호, 음성링고, 영상링고, AI통화비서, 080착신형AS, 모두의AI) 데이터를 새로 생성할까요?",
+      )
+    ) {
+      return;
+    }
+    setBusy("seed");
+    try {
+      const r = await api<{ summary: DemoSeedSummary }>("/api/demo/seed", {
+        method: "POST",
+        body: { action: "seed" },
+      });
+      setSummary(r.summary);
+      await onChanged();
+      notify({
+        kind: "ok",
+        text: `초기화 완료: 단위서비스 ${r.summary.services}개, 라벨링 ${r.summary.labels}개, 개발사항 ${r.summary.items}개를 생성했습니다.`,
+      });
+    } catch (e) {
+      notify({ kind: "error", text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runClear() {
+    if (!window.confirm("모든 단위서비스·라벨링·개발사항·메일·산출물을 비울까요?")) return;
+    setBusy("clear");
+    try {
+      await api("/api/demo/seed", { method: "POST", body: { action: "clear" } });
+      setSummary(null);
+      await onChanged();
+      notify({ kind: "ok", text: "모든 데이터를 비웠습니다." });
+    } catch (e) {
+      notify({ kind: "error", text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="bg-panel border border-line rounded-xl p-5">
+      <h2 className="font-semibold mb-1">데이터 초기화 및 일괄 구성</h2>
+      <p className="text-[13px] text-muted mb-3">
+        기존 데이터를 모두 초기화하고 6개 단위서비스(전국대표번호, 음성링고, 영상링고, AI통화비서, 080착신형AS, 모두의AI)에
+        각각 라벨링 3개와 라벨링당 2~4개의 개발사항, 1~7단계별 메일·점검·PRD·설계서·시험항목서·진행상황 산출물을 새로
+        적재합니다. 데이터가 변경되더라도 언제든 다시 초기 구성으로 되돌릴 수 있습니다.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={runSeed}
+          disabled={!!busy}
+          className="px-4 py-2 rounded-md bg-accent text-white font-semibold text-[13px] disabled:opacity-40"
+        >
+          {busy === "seed" ? "초기화 및 생성 중…" : "초기화 후 데이터 생성"}
+        </button>
+        <button
+          onClick={runClear}
+          disabled={!!busy}
+          className="px-3 py-2 rounded-md border border-line hover:border-danger text-muted hover:text-danger text-[13px] disabled:opacity-40"
+        >
+          {busy === "clear" ? "비우는 중…" : "전체 비우기"}
+        </button>
+        {summary && (
+          <button
+            onClick={onOpenDashboard}
+            className="px-3 py-2 rounded-md border border-accent text-accent font-semibold text-[13px]"
+          >
+            대시보드로 이동
+          </button>
+        )}
+      </div>
+      {summary && (
+        <div className="mt-4 pt-3 border-t border-line text-[12.5px] space-y-2">
+          <div>
+            생성 결과: <b>단위서비스 {summary.services}개</b> · <b>라벨링 {summary.labels}개</b> ·{" "}
+            <b>개발사항 {summary.items}개</b> · 메일 {summary.mails}건 · 문서 {summary.documents}건 (
+            {(summary.elapsedMs / 1000).toFixed(1)}초)
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {STAGES.map((st) => (
+              <span key={st.key} className="px-2 py-0.5 rounded-full bg-bg border border-line text-[12px]">
+                {st.no}. {st.label}: <b>{summary.stageCounts[st.key as StageKey] ?? 0}</b>건
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 /** 전체 시나리오 자동 실행 (서비스 정의 7.3): 새 개발사항으로 1~7단계를 차례로 진행하고 결과를 표로 */
-function ScenarioRunner({ notify }: { notify: (t: Toast) => void }) {
+function ScenarioRunner({ notify, onChanged }: { notify: (t: Toast) => void; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ScenarioResultDTO | null>(null);
 
@@ -230,6 +346,7 @@ function ScenarioRunner({ notify }: { notify: (t: Toast) => void }) {
     try {
       const r = await api<ScenarioResultDTO>("/api/sim/scenario", { method: "POST" });
       setResult(r);
+      await onChanged();
       notify(r.ok ? { kind: "ok", text: "전체 시나리오 1~7단계를 모두 통과했습니다." } : { kind: "error", text: "전체 시나리오 중 실패한 단계가 있습니다." });
     } catch (e) {
       notify({ kind: "error", text: (e as Error).message });

@@ -11,6 +11,8 @@ export interface DbHandle {
   exec(sql: string): Promise<void>;
   /** 단일 문장 + 파라미터 */
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+  /** CLI 스크립트 등에서 연결을 안전하게 닫을 때 사용 */
+  close?(): Promise<void>;
 }
 
 type GlobalWithDb = typeof globalThis & { __aiddDb?: Promise<DbHandle> };
@@ -52,6 +54,9 @@ export async function createHandle(opts?: { url?: string; pgliteDir?: string }):
     },
     async query<T>(text: string, params: unknown[] = []) {
       return (await pg.query<T>(text, params)).rows;
+    },
+    async close() {
+      await pg.close();
     },
   };
 }
