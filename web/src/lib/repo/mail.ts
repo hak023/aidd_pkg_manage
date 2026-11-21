@@ -117,10 +117,9 @@ async function setState(key: string, value: string) {
 
 function requireUsable(cfg: MailConfig) {
   if (cfg.mode === "unconfigured") {
-    const n = cfg.envNames;
     throw new DomainError(
       503,
-      `메일 설정이 없습니다. 관리자에게 ${n.gmailAddress}, ${n.appPassword}, ${n.collectTo} 환경 변수 설정을 요청하세요.`,
+      "메일 설정이 없습니다. 설정 → '내 메일 설정'에서 Gmail 주소, 앱 비밀번호, 수집 요청 받는 주소를 입력하세요.",
     );
   }
 }

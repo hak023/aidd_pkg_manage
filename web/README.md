@@ -52,7 +52,7 @@ src/
       mail/poll            로그인 사용자의 메일함 확인 (POST: 화면 버튼·자동 확인)
       mail/status          모드·미분류 개수·마지막 확인 시각
       mails, mails/[id]    미분류함 목록 / 메일 보기·지정·무시·되돌리기
-      settings             현재 config (비밀값은 설정 여부만)
+      settings             현재 config (비밀값은 설정 여부만) · settings/mail 내 메일 설정 조회(GET)·저장(PUT)
       sim/inject           시뮬레이터 샘플 메일 넣기
       settings/test        Gmail·Gemini 연결 테스트
       items/[id]/review    L1 수집 회신 점검 (GET 상태, POST 실행) · reviews/[id] 추가 입력 저장

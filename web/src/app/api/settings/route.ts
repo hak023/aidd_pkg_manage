@@ -12,7 +12,6 @@ export async function GET() {
     const auth = getAuthConfig();
     const user = currentUser();
     const set = (v: string | undefined) => (v && v.trim() ? "설정됨" : "없음");
-    const n = mail.envNames;
     return {
       mailMode: mail.mode,
       mailModeLabel: MAIL_MODE_LABEL[mail.mode],
@@ -30,9 +29,7 @@ export async function GET() {
         { key: "AUTH_SECRET", value: set(process.env.AUTH_SECRET) },
         { key: "DATABASE_URL", value: process.env.DATABASE_URL ? "Neon (설정됨)" : "로컬 PGlite" },
         { key: "SIMULATOR_MODE", value: process.env.SIMULATOR_MODE || "(비어 있음)" },
-        { key: n.gmailAddress, value: mail.gmailAddress || "없음" },
-        { key: n.appPassword, value: mail.appPassword ? "설정됨" : "없음" },
-        { key: n.collectTo, value: mail.collectTo || "없음" },
+        { key: "SETTINGS_ENCRYPTION_KEY", value: process.env.SETTINGS_ENCRYPTION_KEY ? "설정됨" : "없음 (AUTH_SECRET에서 파생)" },
         { key: "MAIL_DAILY_LIMIT", value: `${mail.dailyLimit} (계정별)` },
         { key: "MAIL_LOOKBACK_DAYS", value: String(mail.initialLookbackDays) },
         { key: "GEMINI_API_KEY", value: set(process.env.GEMINI_API_KEY) },

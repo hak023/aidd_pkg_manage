@@ -1,8 +1,8 @@
 /**
  * 메일 config (서비스 정의 7.2). 값은 환경 변수에만 둔다.
  *
- * 다중 사용자(AUTH_USERS)면 로그인 사용자의 USER_<ID>_GMAIL_ADDRESS / _GMAIL_APP_PASSWORD / _COLLECT_TO_ADDRESS,
- * 아니면 전역 GMAIL_ADDRESS / GMAIL_APP_PASSWORD / COLLECT_TO_ADDRESS를 쓴다.
+ * 로그인 사용자의 메일 설정(설정 화면 '내 메일 설정' 입력값 → 관리자 환경 변수 USER_<ID>_* 또는 전역 GMAIL_*)을 쓴다.
+ * 요청 문맥은 lib/api.ts의 respond()가 만든다.
  *
  * 모드 결정 순서
  * 1. SIMULATOR_MODE=true            → simulator (실제 메일 대신 가상 메일함)
@@ -11,7 +11,7 @@
  * 4. 운영에서 값이 부족함            → unconfigured (발송·수신 불가)
  */
 import { isMultiUser, userEnvPrefix } from "@/lib/auth";
-import { currentUser } from "@/lib/session";
+import { currentMail, currentUser } from "@/lib/session";
 
 export type MailMode = "gmail" | "simulator" | "unconfigured";
 
@@ -46,14 +46,17 @@ export function getMailConfig(): MailConfig {
   let appPassword: string;
   let collectTo: string;
   let envNames = GLOBAL_NAMES;
-  if (isMultiUser()) {
-    // 로그인 사용자가 없으면 어떤 계정으로도 송수신하지 않는다
+  const ctxMail = currentMail();
+  if (ctxMail || isMultiUser()) {
+    // 로그인 사용자의 설정(화면 입력값 + 관리자 환경 변수). 다중 사용자인데 사용자가 없으면 송수신하지 않는다
     const user = currentUser();
-    gmailAddress = user?.mail?.gmailAddress ?? "";
-    appPassword = user?.mail?.appPassword ?? "";
-    collectTo = user?.mail?.collectTo ?? "";
-    const p = user ? userEnvPrefix(user.id) : "USER_<ID>_";
-    envNames = { gmailAddress: `${p}GMAIL_ADDRESS`, appPassword: `${p}GMAIL_APP_PASSWORD`, collectTo: `${p}COLLECT_TO_ADDRESS` };
+    gmailAddress = ctxMail?.gmailAddress ?? "";
+    appPassword = ctxMail?.appPassword ?? "";
+    collectTo = ctxMail?.collectTo ?? "";
+    if (isMultiUser()) {
+      const p = user ? userEnvPrefix(user.id) : "USER_<ID>_";
+      envNames = { gmailAddress: `${p}GMAIL_ADDRESS`, appPassword: `${p}GMAIL_APP_PASSWORD`, collectTo: `${p}COLLECT_TO_ADDRESS` };
+    }
   } else {
     gmailAddress = (env.GMAIL_ADDRESS ?? "").trim();
     appPassword = (env.GMAIL_APP_PASSWORD ?? "").replace(/\s+/g, "");

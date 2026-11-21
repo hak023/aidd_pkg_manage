@@ -40,6 +40,7 @@ describe("트리 저장소", () => {
       "0004_docs",
       "0005_progress",
       "0006_demo_scope_accounts",
+      "0007_user_settings",
     ]);
     expect(await migrate(h)).toEqual([]);
   });
@@ -52,7 +53,7 @@ describe("트리 저장소", () => {
       await h.query("INSERT INTO _migrations (id) VALUES ($1)", [m.id]);
     }
     await h.query("INSERT INTO nodes (type, name) VALUES ('service', '기존 서비스')");
-    expect(await migrate(h)).toEqual(["0006_demo_scope_accounts"]);
+    expect(await migrate(h)).toEqual(["0006_demo_scope_accounts", "0007_user_settings"]);
     await h.query("INSERT INTO nodes (type, name) VALUES ('service', '새 서비스')");
     expect(await h.query("SELECT name, is_demo FROM nodes ORDER BY id")).toEqual([
       { name: "기존 서비스", is_demo: true },

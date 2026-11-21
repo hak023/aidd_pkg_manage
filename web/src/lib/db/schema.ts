@@ -167,6 +167,18 @@ export const progressReports = pgTable("progress_reports", {
 
 export type DocKind = "prd" | "arch" | "qa" | "arch_report" | "qa_report";
 
+/**
+ * 사용자가 설정 화면에서 입력한 메일 설정 (2026-11-22). 비어 있는 값은 관리자 환경 변수를 쓴다.
+ * 앱 비밀번호는 암호화해 저장한다 (lib/secret-box.ts).
+ */
+export const userSettings = pgTable("user_settings", {
+  userId: text("user_id").primaryKey(),
+  gmailAddress: text("gmail_address").notNull().default(""),
+  appPasswordEnc: text("app_password_enc").notNull().default(""),
+  collectTo: text("collect_to").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type MailDirection = "out" | "in";
 export type MailKind =
   | "collect_request"

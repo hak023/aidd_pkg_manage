@@ -174,4 +174,17 @@ UPDATE mails SET account = lower(from_addr) WHERE direction = 'out' AND from_add
 CREATE INDEX mails_account_idx ON mails(account, direction, created_at);
 `,
   },
+  {
+    // 사용자별 메일 설정 (설정 화면에서 수정, 앱 비밀번호는 암호화)
+    id: "0007_user_settings",
+    sql: `
+CREATE TABLE user_settings (
+  user_id text PRIMARY KEY,
+  gmail_address text NOT NULL DEFAULT '',
+  app_password_enc text NOT NULL DEFAULT '',
+  collect_to text NOT NULL DEFAULT '',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+`,
+  },
 ];

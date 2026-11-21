@@ -81,10 +81,15 @@ function loadMultiUsers(env: NodeJS.ProcessEnv): AuthUser[] {
   return users;
 }
 
+/** 쿠키 서명·설정 암호화에 쓰는 비밀값 (로컬 개발은 기본값) */
+export function getAuthSecret(env: NodeJS.ProcessEnv = process.env): string {
+  return env.AUTH_SECRET || (env.NODE_ENV !== "production" ? DEV_DEFAULTS.secret : "");
+}
+
 /** 운영에서 필요한 값이 없으면 null (로그인 불가) */
 export function getAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig | null {
   const dev = env.NODE_ENV !== "production";
-  const secret = env.AUTH_SECRET || (dev ? DEV_DEFAULTS.secret : "");
+  const secret = getAuthSecret(env);
   if (!secret) return null;
 
   if (env.AUTH_USERS?.trim()) {

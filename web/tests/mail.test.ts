@@ -5,6 +5,8 @@ import { mails } from "@/lib/db/schema";
 import { getMailConfig } from "@/lib/mail/config";
 import type { AuthUser } from "@/lib/auth";
 import { runWithUser } from "@/lib/session";
+import { decryptSecret, encryptSecret } from "@/lib/secret-box";
+import { effectiveMailFor, getMyMailSettings, saveMyMailSettings } from "@/lib/repo/user-settings";
 import { composeCollectRequest, replyStartMarker, REPLY_END_MARKER } from "@/lib/mail/compose";
 import { detectKind, isRelevant, matchMail, type InboundMail } from "@/lib/mail/match";
 import {
@@ -269,5 +271,81 @@ describe("메일 저장소 (시뮬레이터)", () => {
     vi.stubEnv("SIMULATOR_MODE", "false");
     vi.stubEnv("NODE_ENV", "production");
     await expect(injectSample("collect_reply", null)).rejects.toThrow(/시뮬레이터 모드/);
+  });
+});
+
+describe("내 메일 설정 (사용자별, 앱 비밀번호 암호화)", () => {
+  beforeEach(async () => {
+    vi.stubEnv("AUTH_SECRET", "t".repeat(40));
+    vi.stubEnv("SETTINGS_ENCRYPTION_KEY", "");
+    const h = await createHandle({ url: "", pgliteDir: "memory://" });
+    await migrate(h);
+    setHandleForTest(h);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("TC-P2-15 앱 비밀번호 암호화: 복호화 가능, 변조·키 변경 시 읽지 못함, 원문이 저장값에 없음", () => {
+    const enc = encryptSecret("abcdefghijklmnop");
+    expect(enc).not.toContain("abcdefghijklmnop");
+    expect(decryptSecret(enc)).toBe("abcdefghijklmnop");
+    expect(decryptSecret(enc.slice(0, -2) + "AA")).toBeNull();
+    vi.stubEnv("SETTINGS_ENCRYPTION_KEY", "another-key");
+    expect(decryptSecret(enc)).toBeNull();
+  });
+
+  it("TC-P2-16 내 설정 저장: 내 값이 관리자 값보다 우선, 사용자끼리 분리, 앱 비밀번호는 응답에 없음", async () => {
+    vi.stubEnv("AUTH_USERS", "alpha,bravo");
+    const alpha: AuthUser = {
+      id: "alpha",
+      name: "alpha",
+      passwordHash: "scrypt$x$y",
+      mail: { gmailAddress: "admin-alpha@example.com", appPassword: "adminpass1234567", collectTo: "admin-co@example.com" },
+    };
+    const bravo: AuthUser = { id: "bravo", name: "bravo", passwordHash: "scrypt$x$y", mail: { gmailAddress: "", appPassword: "", collectTo: "" } };
+
+    expect((await getMyMailSettings(alpha)).source).toEqual({ gmailAddress: "admin", appPassword: "admin", collectTo: "admin" });
+
+    const saved = await saveMyMailSettings(alpha, { gmailAddress: "Me@Example.com ", appPassword: "abcd efgh ijkl mnop" });
+    expect(saved).toMatchObject({ gmailAddress: "Me@Example.com", collectTo: "admin-co@example.com", appPasswordSet: true });
+    expect(saved.source).toEqual({ gmailAddress: "user", appPassword: "user", collectTo: "admin" });
+    expect(JSON.stringify(saved)).not.toContain("abcdefghijklmnop");
+    expect(await effectiveMailFor(alpha)).toEqual({
+      gmailAddress: "Me@Example.com",
+      appPassword: "abcdefghijklmnop",
+      collectTo: "admin-co@example.com",
+    });
+
+    // 빈 앱 비밀번호 입력은 기존 값 유지, 지우기는 관리자 값으로 복귀
+    await saveMyMailSettings(alpha, { collectTo: "mine-co@example.com", appPassword: "" });
+    expect((await effectiveMailFor(alpha))?.appPassword).toBe("abcdefghijklmnop");
+    await saveMyMailSettings(alpha, { clearAppPassword: true });
+    expect((await effectiveMailFor(alpha))?.appPassword).toBe("adminpass1234567");
+
+    // 다른 사용자에게는 영향 없음
+    expect(await getMyMailSettings(bravo)).toMatchObject({ gmailAddress: "", appPasswordSet: false });
+
+    await expect(saveMyMailSettings(bravo, { gmailAddress: "not-an-email" })).rejects.toMatchObject({ status: 400 });
+    await expect(saveMyMailSettings(bravo, { appPassword: "short" })).rejects.toMatchObject({ status: 400 });
+
+    // 요청 문맥의 설정으로 메일 config가 만들어진다
+    vi.stubEnv("SIMULATOR_MODE", "false");
+    const cfg = runWithUser(alpha, () => getMailConfig(), await effectiveMailFor(alpha));
+    expect(cfg).toMatchObject({ mode: "gmail", gmailAddress: "Me@Example.com", collectTo: "mine-co@example.com" });
+  });
+
+  it("TC-P2-17 단일 계정 방식: 내 설정이 없으면 전역 환경 변수, 저장하면 내 값 우선", async () => {
+    vi.stubEnv("GMAIL_ADDRESS", "global@example.com");
+    vi.stubEnv("GMAIL_APP_PASSWORD", "globalpass123456");
+    vi.stubEnv("COLLECT_TO_ADDRESS", "global-co@example.com");
+    const admin: AuthUser = { id: "admin", name: "admin", password: "pw", mail: null };
+    expect(await effectiveMailFor(admin)).toBeNull();
+    await saveMyMailSettings(admin, { collectTo: "mine@example.com" });
+    expect(await effectiveMailFor(admin)).toEqual({
+      gmailAddress: "global@example.com",
+      appPassword: "globalpass123456",
+      collectTo: "mine@example.com",
+    });
   });
 });

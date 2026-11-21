@@ -18,18 +18,17 @@ function errText(e: unknown): string {
 export async function testGmail(opts: { send: boolean }): Promise<CheckStep[]> {
   const cfg = getMailConfig();
   const steps: CheckStep[] = [];
-  const n = cfg.envNames;
   // 시뮬레이터 기본 주소는 실제 설정값이 아니다
   const missing = [
-    cfg.gmailAddress && cfg.gmailAddress !== SIM_GMAIL_ADDRESS ? null : n.gmailAddress,
-    cfg.appPassword ? null : n.appPassword,
-    cfg.collectTo && cfg.collectTo !== SIM_COLLECT_TO ? null : n.collectTo,
+    cfg.gmailAddress && cfg.gmailAddress !== SIM_GMAIL_ADDRESS ? null : "Gmail 주소",
+    cfg.appPassword ? null : "앱 비밀번호",
+    cfg.collectTo && cfg.collectTo !== SIM_COLLECT_TO ? null : "수집 요청 받는 주소",
   ].filter(Boolean);
   steps.push({
     name: "설정값",
     ok: missing.length === 0,
     detail: missing.length
-      ? `없음: ${missing.join(", ")}`
+      ? `없음: ${missing.join(", ")} → '내 메일 설정'에서 입력 후 저장하세요`
       : `모드: ${cfg.mode}${cfg.mode === "simulator" ? " (SIMULATOR_MODE=true라 실제 송수신은 하지 않습니다)" : ""}`,
   });
   if (missing.length) return steps;
