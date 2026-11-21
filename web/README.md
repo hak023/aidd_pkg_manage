@@ -16,6 +16,7 @@ npm run dev          # http://localhost:3000
 - `.env.local`이 없으면 개발용 계정 **admin / admin**으로 로그인합니다.
 - DB는 설치가 필요 없는 내장 Postgres(PGlite)를 `web/.data/pglite`에 저장합니다. 폴더를 지우면 초기화됩니다.
 - 환경 변수 목록은 [`env.example`](env.example)에 있습니다.
+- `npm run dev` / `npm start`는 `NODE_OPTIONS=--use-system-ca`로 실행합니다. 회사망의 SSL 검사 장비 때문에 Node가 Gmail·Gemini 인증서를 거부하는 문제를 막기 위해서입니다(Windows 인증서 저장소의 사내 루트 인증서 사용).
 - 메일 값이 없으면 **시뮬레이터 모드**(가상 메일함)로 동작합니다. 실제 Gmail 연결은 [`docs/guides/메일-연동-가이드.md`](../docs/guides/메일-연동-가이드.md)를 따릅니다.
 
 ## 스크립트
@@ -51,14 +52,25 @@ src/
       mails, mails/[id]    미분류함 목록 / 메일 보기·지정·무시·되돌리기
       settings             현재 config (비밀값은 설정 여부만)
       sim/inject           시뮬레이터 샘플 메일 넣기
+      settings/test        Gmail·Gemini 연결 테스트
+      items/[id]/review    L1 수집 회신 점검 (GET 상태, POST 실행) · reviews/[id] 추가 입력 저장
+      items/[id]/prd       L2 PRD 생성
+      items/[id]/share     공유 기본값(GET)·발송(POST) ?kind=prd|arch|qa|progress
+      items/[id]/docs      Architecture/QA 등록 상태(GET)·등록(POST) · items/[id]/doc-review 검토 리포트 다시 생성
+      items/[id]/manual-reply  수집 회신 직접 입력
+      items/[id]/progress-request  진행상황 요청 메일 미리보기(GET)·발송(POST)
+      items/[id]/progress  진행상황 기록·이력(GET), 다시 해석·직접 입력(POST)
+      sim/scenario         전체 시나리오 1~7단계 자동 실행 (시뮬레이터 모드)
+      items/[id]/documents 문서 버전 목록·편집본 저장 · documents/[id] 원문(?download=1)
   components/              화면 컴포넌트 (Workspace, TreePanel, ItemDetail, Mail, MailInbox, Settings …)
   lib/
     auth.ts                더미 로그인과 HMAC 서명 쿠키
     db/                    Drizzle 스키마, 연결(Neon/PGlite), SQL 마이그레이션
     domain/                단계 정의, 트리 배치 규칙, 메일 태그·파일명 규칙
     mail/                  메일 config·본문 작성·분류/매칭·Gmail SMTP/IMAP·시뮬레이터 샘플
-    repo/                  DB 작업 (트리, 개발사항, 단계, 이력, 메일)
-tests/                     Vitest
+    llm/                   Gemini REST, L1 점검·L2 PRD·L3 분류·L4/L5 대조의 프롬프트·스키마·검증, 모의 LLM, 작업별 실행기
+    repo/                  DB 작업 (트리, 개발사항, 단계, 이력, 메일, 점검·PRD·문서 버전, Architecture/QA 등록·리포트·공유)
+tests/                     Vitest (테스트 이름 앞의 TC ID는 docs/test/의 시험 문서와 같음)
 ```
 
 ## DB 마이그레이션

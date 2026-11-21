@@ -75,6 +75,8 @@ export const mails = pgTable("mails", {
   subject: text("subject").notNull().default(""),
   bodyText: text("body_text").notNull().default(""),
   simulated: boolean("simulated").notNull().default(false),
+  /** 미분류 메일의 L3 추정 결과 (JSON, P4) */
+  suggestion: text("suggestion"),
   mailDate: timestamp("mail_date", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -103,6 +105,62 @@ export const appState = pgTable("app_state", {
   value: text("value").notNull(),
 });
 
+/** L1 수집 회신 점검 결과와 사용자 추가 입력 (P3) */
+export const reviews = pgTable("reviews", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull(),
+  mailId: integer("mail_id"),
+  status: text("status").$type<"ok" | "failed">().notNull(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull().default(""),
+  sourceText: text("source_text").notNull().default(""),
+  result: text("result"),
+  error: text("error"),
+  answers: text("answers").notNull().default("{}"),
+  extraNote: text("extra_note").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** 버전별 md 문서 (PRD, 이후 Architecture/QA와 검토 리포트) */
+export const documents = pgTable(
+  "documents",
+  {
+    id: serial("id").primaryKey(),
+    itemId: integer("item_id").notNull(),
+    kind: text("kind").$type<DocKind>().notNull(),
+    version: integer("version").notNull(),
+    filename: text("filename").notNull(),
+    content: text("content").notNull(),
+    source: text("source").$type<"llm" | "edit" | "mail">().notNull(),
+    note: text("note").notNull().default(""),
+    /** 전달 메일에서 등록한 경우 그 메일과 첨부 (P4) */
+    sourceMailId: integer("source_mail_id"),
+    attachmentId: integer("attachment_id"),
+    /** 검토 리포트의 대상 문서와 기준 PRD (P4) */
+    baseDocId: integer("base_doc_id"),
+    prdDocId: integer("prd_doc_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("documents_item_kind_ver_uq").on(t.itemId, t.kind, t.version)],
+);
+
+/** L6 진행상황 회신 해석 결과 (P5). 회신마다 한 행 */
+export const progressReports = pgTable("progress_reports", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull(),
+  mailId: integer("mail_id"),
+  status: text("status").$type<"ok" | "failed">().notNull(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull().default(""),
+  sourceText: text("source_text").notNull().default(""),
+  milestones: text("milestones"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type DocKind = "prd" | "arch" | "qa" | "arch_report" | "qa_report";
+
 export type MailDirection = "out" | "in";
 export type MailKind =
   | "collect_request"
@@ -113,7 +171,7 @@ export type MailKind =
   | "doc_forward"
   | "other";
 export type MailStatus = "sent" | "simulated" | "matched" | "unmatched" | "ignored";
-export type MatchMethod = "tag" | "header" | "marker" | "manual";
+export type MatchMethod = "tag" | "header" | "marker" | "manual" | "llm";
 
 export type NodeType = "service" | "label" | "item";
 export type StageKey = "collect" | "review" | "prd" | "arch" | "qa" | "progress" | "done";

@@ -81,6 +81,10 @@ export default function Settings({
         </p>
       </section>
 
+      <ConnectionTest notify={notify} />
+
+      {s?.mailMode === "simulator" && <ScenarioRunner notify={notify} />}
+
       <section className="bg-panel border border-line rounded-xl p-5">
         <h2 className="font-semibold mb-1">자동 메일 확인</h2>
         <ul className="text-[13px] list-disc pl-5 space-y-1">
@@ -143,5 +147,139 @@ export default function Settings({
         )}
       </section>
     </div>
+  );
+}
+
+interface CheckStep {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+/** Gmail·Gemini 연결 테스트 */
+function ConnectionTest({ notify }: { notify: (t: Toast) => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [result, setResult] = useState<{ title: string; steps: CheckStep[] } | null>(null);
+
+  async function run(target: "gmail" | "gemini", send = false) {
+    if (send && !window.confirm("COLLECT_TO_ADDRESS(회사 주소)로 테스트 메일 1통을 보낼까요?")) return;
+    setBusy(target + (send ? "-send" : ""));
+    try {
+      const r = await api<{ steps: CheckStep[] }>("/api/settings/test", { method: "POST", body: { target, send } });
+      setResult({ title: target === "gmail" ? "Gmail 연결 테스트" : "Gemini 연결 테스트", steps: r.steps });
+    } catch (e) {
+      notify({ kind: "error", text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const btn = "text-[12px] px-3 py-1.5 rounded-md border border-line hover:border-accent disabled:opacity-40";
+  return (
+    <section className="bg-panel border border-line rounded-xl p-5">
+      <h2 className="font-semibold mb-1">연결 테스트</h2>
+      <p className="text-[13px] text-muted mb-3">
+        환경 변수 값으로 실제 서버에 접속해 봅니다. 시뮬레이터 모드여도 Gmail 값이 있으면 테스트할 수 있습니다.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button className={btn} disabled={!!busy} onClick={() => run("gmail")}>
+          {busy === "gmail" ? "확인 중…" : "Gmail 로그인 확인"}
+        </button>
+        <button className={btn} disabled={!!busy} onClick={() => run("gmail", true)}>
+          {busy === "gmail-send" ? "보내는 중…" : "Gmail 테스트 메일 보내기"}
+        </button>
+        <button className={btn} disabled={!!busy} onClick={() => run("gemini")}>
+          {busy === "gemini" ? "확인 중…" : "Gemini 확인"}
+        </button>
+      </div>
+      {result && (
+        <div className="mt-4">
+          <h3 className="text-[13px] font-semibold mb-1">{result.title}</h3>
+          <ul className="text-[13px] space-y-1">
+            {result.steps.map((s) => (
+              <li key={s.name} className="flex gap-2">
+                <span className={s.ok ? "text-ok" : "text-danger"}>{s.ok ? "✓" : "✕"}</span>
+                <span className="font-semibold shrink-0">{s.name}</span>
+                <span className="text-muted break-all">{s.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+interface ScenarioResultDTO {
+  itemId: number | null;
+  itemName: string;
+  llm: string;
+  ok: boolean;
+  steps: { no: number; title: string; ok: boolean; detail: string; ms: number }[];
+  totalMs: number;
+}
+
+/** 전체 시나리오 자동 실행 (서비스 정의 7.3): 새 개발사항으로 1~7단계를 차례로 진행하고 결과를 표로 */
+function ScenarioRunner({ notify }: { notify: (t: Toast) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<ScenarioResultDTO | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await api<ScenarioResultDTO>("/api/sim/scenario", { method: "POST" });
+      setResult(r);
+      notify(r.ok ? { kind: "ok", text: "전체 시나리오 1~7단계를 모두 통과했습니다." } : { kind: "error", text: "전체 시나리오 중 실패한 단계가 있습니다." });
+    } catch (e) {
+      notify({ kind: "error", text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="bg-panel border border-line rounded-xl p-5">
+      <h2 className="font-semibold mb-1">전체 시나리오 실행</h2>
+      <p className="text-[13px] text-muted mb-3">
+        “시나리오 시험” 단위서비스 아래에 개발사항을 새로 만들고, 합성 메일로 1~7단계를 차례로 진행하며 단계마다 넘어가는지
+        확인합니다. LLM은 지금 설정(모의 또는 Gemini)을 그대로 씁니다. Gemini면 1분 정도 걸립니다.
+      </p>
+      <button
+        onClick={run}
+        disabled={busy}
+        className="px-4 py-2 rounded-md bg-accent text-white font-semibold text-[13px] disabled:opacity-40"
+      >
+        {busy ? "실행 중…" : "전체 시나리오 실행"}
+      </button>
+      {result && (
+        <div className="mt-4">
+          <p className={`text-[13px] font-semibold mb-2 ${result.ok ? "text-ok" : "text-danger"}`}>
+            {result.ok ? "모두 통과" : "실패"} · {result.llm} · {(result.totalMs / 1000).toFixed(1)}초 ·{" "}
+            {result.itemId ? (
+              <a className="text-accent underline" href={`#node-${result.itemId}`}>
+                {result.itemName}
+              </a>
+            ) : (
+              result.itemName
+            )}
+          </p>
+          <table className="w-full text-[12.5px] border border-line rounded-lg">
+            <tbody>
+              {result.steps.map((st) => (
+                <tr key={st.no} className="border-t border-line align-top">
+                  <td className="px-3 py-1.5 w-8">{st.ok ? <span className="text-ok">✓</span> : <span className="text-danger">✕</span>}</td>
+                  <td className="px-3 py-1.5 w-44 font-semibold">
+                    {st.no}. {st.title}
+                  </td>
+                  <td className="px-3 py-1.5 break-words">{st.detail}</td>
+                  <td className="px-3 py-1.5 w-20 text-right text-muted">{(st.ms / 1000).toFixed(1)}초</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }

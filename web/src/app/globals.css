@@ -47,3 +47,18 @@ select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* markdown 미리보기 */
+.md { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.md h1 { font-size: 18px; font-weight: 700; margin: 0 0 8px; }
+.md h2 { font-size: 15px; font-weight: 700; margin: 18px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.md h3 { font-size: 13.5px; font-weight: 700; margin: 12px 0 4px; }
+.md p, .md ul, .md ol, .md table, .md blockquote { margin: 6px 0; }
+.md ul { list-style: disc; padding-left: 20px; }
+.md ol { list-style: decimal; padding-left: 20px; }
+.md table { border-collapse: collapse; width: 100%; font-size: 12px; display: block; overflow-x: auto; }
+.md th, .md td { border: 1px solid var(--line); padding: 4px 6px; vertical-align: top; text-align: left; }
+.md th { background: var(--bg); font-weight: 600; }
+.md blockquote { border-left: 3px solid var(--line); padding-left: 10px; color: var(--muted); }
+.md code { background: var(--bg); padding: 0 3px; border-radius: 3px; font-size: 12px; }
+.md a { color: var(--accent); text-decoration: underline; }

@@ -66,20 +66,21 @@ export default function Dashboard({ flat, loading, onSelect, onCreate }: Props) 
               <th className="px-3 py-2 font-medium">단위서비스 / 라벨링</th>
               <th className="px-3 py-2 font-medium">현재 단계</th>
               <th className="px-3 py-2 font-medium">진행</th>
+              <th className="px-3 py-2 font-medium w-32">상용적용</th>
               <th className="px-3 py-2 font-medium w-36">최근 활동</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-muted">
+                <td colSpan={7} className="px-3 py-6 text-center text-muted">
                   불러오는 중…
                 </td>
               </tr>
             )}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-muted">
+                <td colSpan={7} className="px-3 py-8 text-center text-muted">
                   표시할 개발사항이 없습니다.{" "}
                   <button className="text-accent hover:underline" onClick={() => onCreate("item", null)}>
                     개발사항 만들기
@@ -111,6 +112,16 @@ export default function Dashboard({ flat, loading, onSelect, onCreate }: Props) 
                   </td>
                   <td className="px-3 py-2">
                     <StageDots statuses={node.item!.statuses} />
+                  </td>
+                  <td className="px-3 py-2 text-[12px] whitespace-nowrap">
+                    {node.item!.launch?.end ? (
+                      <span title={`상태: ${node.item!.launch.status}`}>
+                        {node.item!.launch.end}
+                        {node.item!.launch.endKind && <span className="text-muted"> ({node.item!.launch.endKind})</span>}
+                      </span>
+                    ) : (
+                      <span className="text-muted">미정</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-muted text-[12px]">{formatDateTime(node.item!.lastEventAt)}</td>
                 </tr>

@@ -95,4 +95,68 @@ CREATE TABLE app_state (
 );
 `,
   },
+  {
+    id: "0003_prd",
+    sql: `
+CREATE TABLE reviews (
+  id serial PRIMARY KEY,
+  item_id integer NOT NULL REFERENCES dev_items(node_id) ON DELETE CASCADE,
+  mail_id integer REFERENCES mails(id) ON DELETE SET NULL,
+  status text NOT NULL CHECK (status IN ('ok','failed')),
+  provider text NOT NULL,
+  model text NOT NULL DEFAULT '',
+  source_text text NOT NULL DEFAULT '',
+  result text,
+  error text,
+  answers text NOT NULL DEFAULT '{}',
+  extra_note text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX reviews_item_idx ON reviews(item_id, id);
+
+CREATE TABLE documents (
+  id serial PRIMARY KEY,
+  item_id integer NOT NULL REFERENCES dev_items(node_id) ON DELETE CASCADE,
+  kind text NOT NULL CHECK (kind IN ('prd','arch','qa','arch_report','qa_report')),
+  version integer NOT NULL,
+  filename text NOT NULL,
+  content text NOT NULL,
+  source text NOT NULL CHECK (source IN ('llm','edit','mail')),
+  note text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX documents_item_kind_ver_uq ON documents(item_id, kind, version);
+`,
+  },
+  {
+    id: "0004_docs",
+    sql: `
+ALTER TABLE documents
+  ADD COLUMN source_mail_id integer REFERENCES mails(id) ON DELETE SET NULL,
+  ADD COLUMN attachment_id integer REFERENCES mail_attachments(id) ON DELETE SET NULL,
+  ADD COLUMN base_doc_id integer REFERENCES documents(id) ON DELETE SET NULL,
+  ADD COLUMN prd_doc_id integer REFERENCES documents(id) ON DELETE SET NULL;
+CREATE INDEX documents_attachment_idx ON documents(attachment_id);
+ALTER TABLE mails ADD COLUMN suggestion text;
+`,
+  },
+  {
+    id: "0005_progress",
+    sql: `
+CREATE TABLE progress_reports (
+  id serial PRIMARY KEY,
+  item_id integer NOT NULL REFERENCES dev_items(node_id) ON DELETE CASCADE,
+  mail_id integer REFERENCES mails(id) ON DELETE SET NULL,
+  status text NOT NULL CHECK (status IN ('ok','failed')),
+  provider text NOT NULL,
+  model text NOT NULL DEFAULT '',
+  source_text text NOT NULL DEFAULT '',
+  milestones text,
+  error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX progress_reports_item_idx ON progress_reports(item_id, id);
+`,
+  },
 ];

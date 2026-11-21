@@ -36,6 +36,9 @@ export default function MailInbox({
   }, [status, refreshToken, tick, notify]);
 
   const items = flat.filter((n) => n.type === "item" && n.item);
+  const itemIdByCode = new Map(items.map((n) => [n.item!.code, n.id]));
+  const pickFor = (m: MailSummaryDTO) =>
+    pick[m.id] ?? (m.suggestion?.itemCode ? String(itemIdByCode.get(m.suggestion.itemCode) ?? "") : "");
   const pathName = (n: TreeNodeDTO) => {
     const names: string[] = [];
     let cur: TreeNodeDTO | undefined = n;
@@ -63,7 +66,8 @@ export default function MailInbox({
       <h1 className="text-[20px] font-bold mb-1">미분류함</h1>
       <p className="text-[13px] text-muted mb-4">
         제목 태그·회신 헤더·본문 표식으로 개발사항을 찾지 못한 수신 메일입니다. 개발사항을 골라 지정하면 그 개발사항의
-        메일로 등록되고 단계가 진행됩니다. (첨부 내용으로 자동 추정하는 기능은 P4에서 추가됩니다.)
+        메일로 등록되고 단계가 진행됩니다. md 첨부가 있으면 내용으로 개발사항을 추정해 확신도가 높을 때(0.7 이상) 자동으로
+        지정하고, 낮으면 아래에 추천으로 보여 줍니다.
       </p>
       <div className="flex gap-1.5 mb-3">
         {(["unmatched", "ignored"] as const).map((s) => (
@@ -92,7 +96,7 @@ export default function MailInbox({
                   <select
                     aria-label="지정할 개발사항"
                     className="border border-line rounded-md px-2 py-1 text-[12px] max-w-64 bg-white"
-                    value={pick[m.id] ?? ""}
+                    value={pickFor(m)}
                     onChange={(e) => setPick({ ...pick, [m.id]: e.target.value })}
                   >
                     <option value="">개발사항 선택…</option>
@@ -103,8 +107,8 @@ export default function MailInbox({
                     ))}
                   </select>
                   <button
-                    disabled={!pick[m.id]}
-                    onClick={() => act(m.id, { action: "assign", itemId: Number(pick[m.id]) }, "개발사항에 지정했습니다.")}
+                    disabled={!pickFor(m)}
+                    onClick={() => act(m.id, { action: "assign", itemId: Number(pickFor(m)) }, "개발사항에 지정했습니다.")}
                     className="text-[12px] px-2.5 py-1 rounded-md bg-accent text-white font-semibold disabled:opacity-40"
                   >
                     지정

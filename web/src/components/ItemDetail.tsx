@@ -9,6 +9,11 @@ import { STAGES, STATUS_LABEL, stageDef } from "@/lib/domain/stages";
 import { docFileName, forwardSubject, mailTag } from "@/lib/domain/naming";
 import type { Toast } from "./Workspace";
 import { MailList, MailViewer } from "./Mail";
+import ReviewPanel from "./ReviewPanel";
+import PrdPanel from "./PrdPanel";
+import DocReviewPanel from "./DocReviewPanel";
+import ProgressPanel from "./ProgressPanel";
+import RequestMailDialog from "./RequestMailDialog";
 
 interface Props {
   id: number;
@@ -32,6 +37,7 @@ export default function ItemDetail({ id, onChanged, notify, onSelect, refreshTok
   const [focus, setFocus] = useState<StageKey | null>(null);
   const [collectOpen, setCollectOpen] = useState(false);
   const [viewMail, setViewMail] = useState<number | null>(null);
+  const [localTick, setLocalTick] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -48,12 +54,18 @@ export default function ItemDetail({ id, onChanged, notify, onSelect, refreshTok
     return () => {
       alive = false;
     };
-  }, [id, refreshToken]);
+  }, [id, refreshToken, localTick]);
 
   if (error) return <div className="m-6 p-3 rounded-md bg-danger-soft text-danger text-[13px]">{error}</div>;
   if (!item) return <div className="p-6 text-muted">불러오는 중…</div>;
 
   const focused = stageDef(focus ?? item.currentStage);
+
+  /** 작업 영역에서 단계가 바뀌었을 때: 상세·메일 이력과 트리를 다시 불러온다 */
+  async function refresh() {
+    setLocalTick((t) => t + 1);
+    await onChanged();
+  }
 
   async function setStatus(stage: StageKey, status: StageStatus) {
     try {
@@ -199,6 +211,15 @@ export default function ItemDetail({ id, onChanged, notify, onSelect, refreshTok
         </dl>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
+          {focused.key === "done" && (
+            <div className="w-full flex flex-wrap gap-1.5 mb-1 text-[12px]" aria-label="단계 요약">
+              {STAGES.filter((x) => x.key !== "done").map((x) => (
+                <span key={x.key} className={`px-2 py-0.5 rounded-full ${STATUS_STYLE[item.statuses[x.key].status].chip}`}>
+                  {x.no}. {x.label} · {STATUS_LABEL[item.statuses[x.key].status]}
+                </span>
+              ))}
+            </div>
+          )}
           {focused.key === "done" ? (
             item.completedAt ? (
               <button
@@ -230,17 +251,15 @@ export default function ItemDetail({ id, onChanged, notify, onSelect, refreshTok
               </span>
             </>
           ) : (
-            <>
-              <button
-                disabled
-                className="px-4 py-2 rounded-md bg-accent text-white font-semibold text-[13px] opacity-40 cursor-not-allowed"
-              >
-                {ACTION_LABEL[focused.key]}
-              </button>
-              <span className="text-[12px] text-muted">
-                {focused.availableIn}에서 연결 예정 · 지금은 위의 버튼으로 상태를 직접 바꿀 수 있습니다.
-              </span>
-            </>
+            <span className="text-[12px] text-muted">
+              아래 “
+              {
+                { review: "수집 검토", prd: "PRD", arch: "개발사 Architecture 문서", qa: "개발사 QA 문서", progress: "진행상황" }[
+                  focused.key
+                ]
+              }
+              ” 영역에서 진행합니다.
+            </span>
           )}
         </div>
 
@@ -251,6 +270,32 @@ export default function ItemDetail({ id, onChanged, notify, onSelect, refreshTok
           </p>
         )}
       </section>
+
+      {focused.key === "review" && (
+        <ReviewPanel
+          itemId={id}
+          refreshToken={refreshToken + localTick}
+          onChanged={refresh}
+          notify={notify}
+          onPrdCreated={() => setFocus("prd")}
+        />
+      )}
+      {focused.key === "prd" && (
+        <PrdPanel itemId={id} refreshToken={refreshToken + localTick} onChanged={refresh} notify={notify} />
+      )}
+      {focused.key === "progress" && (
+        <ProgressPanel itemId={id} refreshToken={refreshToken + localTick} onChanged={refresh} notify={notify} />
+      )}
+      {(focused.key === "arch" || focused.key === "qa") && (
+        <DocReviewPanel
+          key={focused.key}
+          itemId={id}
+          kind={focused.key}
+          refreshToken={refreshToken + localTick}
+          onChanged={refresh}
+          notify={notify}
+        />
+      )}
 
       <section className="bg-panel border border-line rounded-xl p-5 mb-4">
         <h3 className="font-semibold mb-2">메일 이력</h3>
@@ -273,8 +318,9 @@ export default function ItemDetail({ id, onChanged, notify, onSelect, refreshTok
       </div>
 
       {collectOpen && (
-        <CollectDialog
+        <RequestMailDialog
           itemId={id}
+          kind="collect"
           onClose={() => setCollectOpen(false)}
           onSent={async (next, mail) => {
             setCollectOpen(false);
@@ -290,93 +336,6 @@ export default function ItemDetail({ id, onChanged, notify, onSelect, refreshTok
         />
       )}
       {viewMail !== null && <MailViewer id={viewMail} onClose={() => setViewMail(null)} />}
-    </div>
-  );
-}
-
-/** 수집 요청 메일 미리보기와 발송 확인 */
-function CollectDialog({
-  itemId,
-  onClose,
-  onSent,
-  notify,
-}: {
-  itemId: number;
-  onClose: () => void;
-  onSent: (item: ItemDetailDTO, mail: MailSummaryDTO) => Promise<void>;
-  notify: (t: Toast) => void;
-}) {
-  const [preview, setPreview] = useState<{ subject: string; text: string; to: string; mode: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    api<{ subject: string; text: string; to: string; mode: string }>(`/api/items/${itemId}/collect-request`)
-      .then((p) => alive && setPreview(p))
-      .catch((e: Error) => alive && setError(e.message));
-    return () => {
-      alive = false;
-    };
-  }, [itemId]);
-
-  async function send() {
-    setBusy(true);
-    try {
-      const r = await api<{ item: ItemDetailDTO; mail: MailSummaryDTO }>(`/api/items/${itemId}/collect-request`, {
-        method: "POST",
-      });
-      await onSent(r.item, r.mail);
-    } catch (e) {
-      notify({ kind: "error", text: (e as Error).message });
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="수집 요청 메일 보내기"
-        className="bg-panel rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-3 border-b border-line">
-          <h2 className="font-semibold text-[15px]">수집 요청 메일 보내기</h2>
-          <p className="text-[12px] text-muted">
-            받는 사람은 config에 지정된 회사 주소로 고정됩니다.
-            {preview?.mode === "simulator" && " 지금은 시뮬레이터 모드라 실제로 발송하지 않고 가상 메일함에 기록합니다."}
-          </p>
-        </div>
-        {error && <div className="m-4 p-3 rounded-md bg-danger-soft text-danger text-[13px]">{error}</div>}
-        {!preview && !error && <div className="p-5 text-muted text-[13px]">불러오는 중…</div>}
-        {preview && (
-          <div className="px-5 py-3 overflow-y-auto flex-1 text-[13px]">
-            <div className="grid grid-cols-[80px_1fr] gap-y-1 mb-3">
-              <span className="text-muted">받는 사람</span>
-              <span className="font-mono break-all">{preview.to}</span>
-              <span className="text-muted">제목</span>
-              <span className="break-all">{preview.subject}</span>
-            </div>
-            <pre className="p-4 bg-bg rounded-lg text-[12px] leading-relaxed whitespace-pre-wrap break-words font-mono">
-              {preview.text}
-            </pre>
-          </div>
-        )}
-        <div className="px-5 py-3 border-t border-line flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-md border border-line text-[13px]">
-            취소
-          </button>
-          <button
-            onClick={send}
-            disabled={!preview || busy}
-            className="px-4 py-2 rounded-md bg-accent text-white font-semibold text-[13px] disabled:opacity-40"
-          >
-            {busy ? "보내는 중…" : "보내기"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

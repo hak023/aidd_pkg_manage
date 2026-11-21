@@ -18,6 +18,8 @@ export interface TreeNodeDTO {
     completedAt: string | null;
     statuses: Partial<Record<StageKey, StageStatus>>;
     lastEventAt: string | null;
+    /** 최신 진행상황의 상용적용 (P5). 없으면 null → 화면에 "미정" */
+    launch: { status: string; end: string; endKind: string } | null;
   };
 }
 
@@ -55,6 +57,9 @@ export async function listTree(): Promise<TreeNodeDTO[]> {
     statusesById.set(s.itemId, m);
   }
   const lastById = new Map(lastEvents.map((e) => [e.itemId, e.at]));
+  // progress.ts가 tree.ts를 쓰므로 순환 참조를 피해 동적으로 불러온다
+  const { latestLaunchByItem } = await import("./progress");
+  const launchById = await latestLaunchByItem();
 
   return rows.map((n) => {
     const dto: TreeNodeDTO = {
@@ -74,6 +79,7 @@ export async function listTree(): Promise<TreeNodeDTO[]> {
         currentStage: currentStage(statuses),
         completedAt: it.completedAt ? it.completedAt.toISOString() : null,
         lastEventAt: last ? new Date(last).toISOString() : null,
+        launch: launchById.get(n.id) ?? null,
       };
     }
     return dto;

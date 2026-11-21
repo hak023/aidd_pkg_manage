@@ -24,7 +24,8 @@ export async function GET() {
         { key: "POLL_SECRET", value: set(process.env.POLL_SECRET) },
         { key: "MAIL_DAILY_LIMIT", value: String(mail.dailyLimit) },
         { key: "MAIL_LOOKBACK_DAYS", value: String(mail.initialLookbackDays) },
-        { key: "GEMINI_API_KEY", value: set(process.env.GEMINI_API_KEY) + " (P3에서 사용)" },
+        { key: "GEMINI_API_KEY", value: set(process.env.GEMINI_API_KEY) },
+        { key: "GEMINI_MODEL", value: process.env.GEMINI_MODEL || "(비어 있음 → Flash-Lite 자동 선택)" },
       ],
       effective: { from: mail.gmailAddress, collectTo: mail.collectTo },
     };

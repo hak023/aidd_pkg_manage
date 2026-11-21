@@ -129,6 +129,32 @@ function progressReplyBody(code: string): string {
   ].join("\n");
 }
 
+function progressUpdateBody(code: string): string {
+  return [
+    "일정 변경이 있어 다시 회신드립니다.",
+    "",
+    `<<<AX_AIDD_PROGRESS_START ${code}>>>`,
+    "| 마일스톤 | 상태 | 시작일 | 완료일 (실적 또는 예정) | 근거 출처 | 비고 |",
+    "|---|---|---|---|---|---|",
+    "| 개발중 | 완료 | 2026-10-20 | 2026-11-27 (실적) | [Teams 2026-11-27 박샘플 \"개발 완료 보고\"] | |",
+    "| 개발검증시험 | 진행중 | 2026-12-01 | 2026-12-08 (예정) | [Outlook 2026-12-01 최테스트 \"시험 착수\"] | 시험 환경 지연으로 3일 연장 |",
+    "| 운용검증시험 | 예정 | 2026-12-10 | 2026-12-16 (예정) | [Outlook 2026-12-02 이예시 \"운용 시험 일정\"] | |",
+    "| 상용적용 | 예정 | | 2026-12-29 (예정) | [Outlook 2026-12-02 이예시 \"운용 시험 일정\"] | 12-22 → 12-29 변경 (시험 연장) |",
+    "<<<AX_AIDD_PROGRESS_END>>>",
+  ].join("\n");
+}
+
+function progressProseBody(): string {
+  return [
+    "진행상황 공유드립니다.",
+    "",
+    "개발은 2026년 10월 20일에 시작해서 11월 27일에 마쳤습니다(박샘플 Teams 11/27 보고).",
+    "개발검증시험은 12월 1일 시작했고 12월 8일 끝날 예정입니다.",
+    "운용검증시험 일정은 아직 협의 중이라 정해지지 않았습니다.",
+    "상용 적용은 2026-12-29로 예정되어 있습니다 (이예시 메일 12/2).",
+  ].join("\n");
+}
+
 export function buildSample(key: SampleKey, ctx: SampleContext): InboundMail {
   const base = {
     messageId: `<sim-${key}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}@simulator.local>`,
@@ -153,15 +179,23 @@ export function buildSample(key: SampleKey, ctx: SampleContext): InboundMail {
         text: collectReplyBody(code),
       };
     }
-    case "progress_reply": {
+    case "progress_reply":
+    case "progress_reply_update":
+    case "progress_reply_prose": {
       const subject = ctx.request?.subject ?? `${tag}${KIND_SUBJECT_TAG.progress} ${ctx.item}`;
       const reply = ctx.request?.messageId ?? null;
+      const text =
+        key === "progress_reply"
+          ? progressReplyBody(code)
+          : key === "progress_reply_update"
+            ? progressUpdateBody(code)
+            : progressProseBody();
       return {
         ...base,
         subject: `RE: ${subject}`,
         inReplyTo: reply,
         references: reply ? [reply] : [],
-        text: progressReplyBody(code),
+        text,
       };
     }
     case "architecture":

@@ -9,6 +9,7 @@ const METHOD_LABEL: Record<string, string> = {
   header: "회신 헤더",
   marker: "본문 표식",
   manual: "수동 지정",
+  llm: "L3 자동 추정",
 };
 
 export function MailBadges({ m }: { m: MailSummaryDTO }) {
@@ -57,6 +58,14 @@ export function MailList({
               {m.direction === "out" ? `받는 사람: ${m.to}` : `보낸 사람: ${m.from}`}
               {m.attachments.length > 0 && ` · 첨부 ${m.attachments.map((a) => a.filename).join(", ")}`}
             </div>
+            {m.status === "unmatched" && m.suggestion && (
+              <div className="text-[12px] mt-0.5 text-accent break-all">
+                추천: {m.suggestion.itemCode || "개발사항 미상"} ·{" "}
+                {{ arch: "Architecture", qa: "QA", other: "유형 미상" }[m.suggestion.docType] ?? m.suggestion.docType} · 확신도{" "}
+                {Number(m.suggestion.confidence).toFixed(2)}
+                {m.suggestion.reason && ` · ${m.suggestion.reason}`}
+              </div>
+            )}
           </div>
           {actions && <div className="flex items-center gap-1.5">{actions(m)}</div>}
         </li>

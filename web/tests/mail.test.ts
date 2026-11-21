@@ -46,7 +46,7 @@ function inbound(p: Partial<InboundMail>): InboundMail {
 }
 
 describe("수집 요청 메일 작성", () => {
-  it("제목 태그·지침·회신 양식 표식을 포함", () => {
+  it("TC-P2-01 제목 태그·지침·회신 양식 표식을 포함", () => {
     const m = composeCollectRequest(target);
     expect(m.subject).toBe(
       "[AX_AIDD][DEV-0001][수집요청] 통화매니저 / R181PKG_26.12 / 통화매니저 SSO 로그인 기능 개발",
@@ -59,7 +59,7 @@ describe("수집 요청 메일 작성", () => {
     expect(m.text).toContain("## 12. 참고 자료·출처");
   });
 
-  it("라벨이 없으면 제목 경로에서 생략", () => {
+  it("TC-P2-02 라벨이 없으면 제목 경로에서 생략", () => {
     const m = composeCollectRequest({ ...target, label: null, keywords: "SSO", searchPeriod: "2026-06~" });
     expect(m.subject).toBe("[AX_AIDD][DEV-0001][수집요청] 통화매니저 / 통화매니저 SSO 로그인 기능 개발");
     expect(m.text).toContain("[검색 키워드] SSO");
@@ -68,7 +68,7 @@ describe("수집 요청 메일 작성", () => {
 });
 
 describe("수신 메일 분류·매칭", () => {
-  it("종류 판별: 제목 태그 > 본문 표식 > md 첨부", () => {
+  it("TC-P2-03 종류 판별: 제목 태그 > 본문 표식 > md 첨부", () => {
     expect(detectKind(inbound({ subject: "RE: [AX_AIDD][DEV-0001][수집요청] x" }))).toBe("collect_reply");
     expect(detectKind(inbound({ subject: "회신: [AX_AIDD][DEV-0001][진행상황요청] x" }))).toBe("progress_reply");
     expect(detectKind(inbound({ text: "<<<AX_AIDD_REPLY_START DEV-0003>>>" }))).toBe("collect_reply");
@@ -78,7 +78,7 @@ describe("수신 메일 분류·매칭", () => {
     expect(detectKind(inbound({ subject: "hello" }))).toBe("other");
   });
 
-  it("매칭 우선순위: 태그 > 헤더 > 표식", () => {
+  it("TC-P2-04 매칭 우선순위: 태그 > 헤더 > 표식", () => {
     const lookup = (id: string) => (id === "<a@x>" ? "DEV-0002" : null);
     expect(matchMail(inbound({ subject: "[AX_AIDD][DEV-0001] FW: 설계서", inReplyTo: "<a@x>" }), lookup)).toEqual({
       code: "DEV-0001",
@@ -95,7 +95,7 @@ describe("수신 메일 분류·매칭", () => {
     expect(matchMail(inbound({ subject: "FW: 설계서" }), lookup)).toEqual({ code: null, method: null });
   });
 
-  it("관계없는 Gmail 메일은 건너뜀 (태그·표식·회사 주소 발신만 기록)", () => {
+  it("TC-P2-05 관계없는 Gmail 메일은 건너뜀 (태그·표식·회사 주소 발신만 기록)", () => {
     expect(isRelevant(inbound({ subject: "광고", from: "ad@shop.com" }), "company@example.com")).toBe(false);
     expect(
       isRelevant(inbound({ subject: "FW: 설계서", from: "Me <Company@Example.com>" }), "company@example.com"),
@@ -124,7 +124,7 @@ describe("메일 저장소 (시뮬레이터)", () => {
     return createNode({ type: "item", name: "통화매니저 SSO 로그인 기능 개발", parentId: lbl.id });
   }
 
-  it("config: SIMULATOR_MODE=true면 시뮬레이터, 운영에서 값이 없으면 설정 필요", () => {
+  it("TC-P2-06 config: SIMULATOR_MODE=true면 시뮬레이터, 운영에서 값이 없으면 설정 필요", () => {
     expect(getMailConfig().mode).toBe("simulator");
     vi.stubEnv("SIMULATOR_MODE", "");
     vi.stubEnv("NODE_ENV", "production");
@@ -137,7 +137,7 @@ describe("메일 저장소 (시뮬레이터)", () => {
     expect(c.appPassword).toBe("abcdefghijklmnop");
   });
 
-  it("1단계 전체 흐름: 발송 → 회신 주입 → 메일 확인 → 수집 완료, 검토 진행중", async () => {
+  it("TC-P2-07 1단계 전체 흐름: 발송 → 회신 주입 → 메일 확인 → 수집 완료, 검토 진행중", async () => {
     const item = await seedItem();
     const preview = await previewCollectRequest(item.id);
     expect(preview.to).toBe("company@example.com");
@@ -170,7 +170,7 @@ describe("메일 저장소 (시뮬레이터)", () => {
     expect((await mailStatus()).pendingSimulated).toBe(0);
   });
 
-  it("헤더 매칭: 제목 태그가 지워져도 In-Reply-To로 찾음", async () => {
+  it("TC-P2-08 헤더 매칭: 제목 태그가 지워져도 In-Reply-To로 찾음", async () => {
     const item = await seedItem();
     const sent = await sendCollectRequest(item.id);
     const { db } = await getHandle();
@@ -185,7 +185,7 @@ describe("메일 저장소 (시뮬레이터)", () => {
     expect(m.matchMethod).toBe("header");
   });
 
-  it("같은 Message-ID는 한 번만 기록", async () => {
+  it("TC-P2-09 같은 Message-ID는 한 번만 기록", async () => {
     const item = await seedItem();
     const code = (await getItemDetail(item.id)).code;
     const mail = inbound({ messageId: "<dup@x>", subject: `[AX_AIDD][${code}] FW: 설계서` });
@@ -193,8 +193,10 @@ describe("메일 저장소 (시뮬레이터)", () => {
     expect(await ingestMail(getMailConfig(), mail, true)).toBe("skipped");
   });
 
-  it("미분류함: 태그 없는 전달 메일 → 수동 지정 / 무시", async () => {
-    const item = await seedItem();
+  it("TC-P2-10 미분류함: 태그 없는 전달 메일 → 수동 지정 / 무시", async () => {
+    // 문서 내용과 관계없는 개발사항만 있으면 L3가 확신하지 못해 미분류함에 남는다 (자동 지정은 TC-P4-xx)
+    const svc = await createNode({ type: "service", name: "링고비즈", parentId: null });
+    const item = await createNode({ type: "item", name: "통계 화면 개선", parentId: svc.id });
     await injectSample("untagged_doc", null);
     await injectSample("untagged_doc", null);
     const r = await pollMail();
@@ -217,14 +219,14 @@ describe("메일 저장소 (시뮬레이터)", () => {
     expect(await listMailsByStatus("ignored")).toHaveLength(1);
   });
 
-  it("진행상황 회신은 진행상황 체크 단계를 완료", async () => {
+  it("TC-P2-11 진행상황 회신은 진행상황 체크 단계를 완료", async () => {
     const item = await seedItem();
     await injectSample("progress_reply", item.id);
     await pollMail();
     expect((await getItemDetail(item.id)).statuses.progress.status).toBe("done");
   });
 
-  it("개발사항을 삭제해도 메일 기록은 남음", async () => {
+  it("TC-P2-12 개발사항을 삭제해도 메일 기록은 남음", async () => {
     const item = await seedItem();
     await sendCollectRequest(item.id);
     await deleteNode(item.id);
@@ -234,7 +236,7 @@ describe("메일 저장소 (시뮬레이터)", () => {
     expect(rows[0].itemId).toBeNull();
   });
 
-  it("시뮬레이터가 아니면 샘플 주입 거부", async () => {
+  it("TC-P2-13 시뮬레이터가 아니면 샘플 주입 거부", async () => {
     vi.stubEnv("SIMULATOR_MODE", "false");
     vi.stubEnv("NODE_ENV", "production");
     await expect(injectSample("collect_reply", null)).rejects.toThrow(/시뮬레이터 모드/);

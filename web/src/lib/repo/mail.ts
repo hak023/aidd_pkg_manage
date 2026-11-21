@@ -23,7 +23,7 @@ import {
   type InboundMail,
 } from "@/lib/mail/match";
 import { buildSample, type SampleKey } from "@/lib/mail/samples";
-import { fetchViaImap, newMessageId, sendViaGmail, type FetchState, type OutgoingMail } from "@/lib/mail/transport";
+import { fetchViaImap, MAX_TEXT, newMessageId, sendViaGmail, type FetchState, type OutgoingMail } from "@/lib/mail/transport";
 import { DomainError } from "./errors";
 import { addEvent, getItemDetail, setStageStatus } from "./tree";
 
@@ -43,6 +43,8 @@ export interface MailSummaryDTO {
   date: string;
   simulated: boolean;
   attachments: { id: number; filename: string; size: number; isDoc: boolean }[];
+  /** 미분류 메일의 L3 추정 (P4) */
+  suggestion: { itemCode: string; docType: string; confidence: number; reason: string; model: string } | null;
 }
 
 export interface MailDetailDTO extends MailSummaryDTO {
@@ -67,6 +69,7 @@ function toSummary(m: MailRow, atts: AttRow[]): MailSummaryDTO {
     to: m.toAddrs,
     date: m.mailDate.toISOString(),
     simulated: m.simulated,
+    suggestion: parseSuggestion(m.suggestion),
     attachments: atts.map((a) => ({
       id: a.id,
       filename: a.filename,
@@ -74,6 +77,15 @@ function toSummary(m: MailRow, atts: AttRow[]): MailSummaryDTO {
       isDoc: isDocAttachment({ filename: a.filename, contentType: a.contentType }),
     })),
   };
+}
+
+function parseSuggestion(s: string | null): MailSummaryDTO["suggestion"] {
+  if (!s) return null;
+  try {
+    return JSON.parse(s) as MailSummaryDTO["suggestion"];
+  } catch {
+    return null;
+  }
 }
 
 async function withAttachments(rows: MailRow[]): Promise<MailSummaryDTO[]> {
@@ -124,7 +136,7 @@ async function checkDailyLimit(cfg: MailConfig) {
   }
 }
 
-async function sendAndRecord(
+export async function sendAndRecord(
   cfg: MailConfig,
   itemId: number | null,
   code: string | null,
@@ -371,6 +383,11 @@ export async function ingestMail(
     await applyInboundEffects(itemId, row);
     return "matched";
   }
+  // 태그 없는 문서 전달 메일: L3로 개발사항을 추정해 자동 지정하거나 추천을 남긴다 (P4)
+  if (m.attachments.some((a) => a.content && isDocAttachment(a))) {
+    const { handleDocMail } = await import("./docs");
+    if ((await handleDocMail(row.id)) === "assigned") return "matched";
+  }
   return "unmatched";
 }
 
@@ -396,14 +413,20 @@ async function applyInboundEffects(itemId: number, m: MailRow) {
       break;
     case "progress_reply":
       await addEvent(itemId, "mail", `진행상황 회신 수신${sim}: ${m.subject}`);
-      await setStageStatus(itemId, "progress", "done", "진행상황 회신 수신");
+      // 해석(L6)에 성공해야 6단계 완료 (P5, G-05)
+      {
+        const { handleProgressMail } = await import("./progress");
+        await handleProgressMail(m.id);
+      }
       break;
     case "doc_forward": {
       const { db: d } = await getHandle();
       const atts = await d.select().from(mailAttachments).where(eq(mailAttachments.mailId, m.id));
       const names = atts.map((a) => a.filename).join(", ");
-      // 문서 유형(Architecture/QA) 판별과 등록은 P4(L3)에서 처리한다
       await addEvent(itemId, "mail", `문서 전달 메일 수신${sim} (첨부: ${names || "없음"}): ${m.subject}`);
+      // 유형 판별(키워드 → L3)과 Architecture/QA 등록, 검토 리포트 생성 (P4)
+      const { handleDocMail } = await import("./docs");
+      await handleDocMail(m.id);
       break;
     }
     default:
@@ -530,7 +553,7 @@ export async function injectSample(key: SampleKey, itemId: number | null) {
     const d = await getItemDetail(itemId);
     const { db } = await getHandle();
     const reqKind: MailKind | null =
-      key === "collect_reply" ? "collect_request" : key === "progress_reply" ? "progress_request" : null;
+      key === "collect_reply" ? "collect_request" : key.startsWith("progress_reply") ? "progress_request" : null;
     let request: { subject: string; messageId: string | null } | null = null;
     if (reqKind) {
       const [r] = await db
@@ -554,4 +577,34 @@ export async function injectSample(key: SampleKey, itemId: number | null) {
   const { db } = await getHandle();
   await db.insert(simInbox).values({ payload: JSON.stringify(mail) });
   return { subject: mail.subject };
+}
+
+// ---------------------------------------------------------------- 수집 회신 직접 입력 (P4, P3 보완)
+
+/**
+ * Copilot 회신 본문을 붙여 넣어 수집 회신으로 등록한다.
+ * Gmail을 쓸 수 없을 때 실제 회신으로 2·3단계를 진행하기 위한 경로.
+ */
+export async function addManualReply(itemId: number, text: unknown): Promise<MailSummaryDTO> {
+  if (typeof text !== "string" || text.trim().length < 20) {
+    throw new DomainError(400, "회신 본문을 20자 이상 붙여 넣으세요.");
+  }
+  const d = await getItemDetail(itemId);
+  const { db } = await getHandle();
+  const [row] = await db
+    .insert(mails)
+    .values({
+      itemId,
+      direction: "in",
+      kind: "collect_reply",
+      status: "matched",
+      matchMethod: "manual",
+      fromAddr: "(직접 입력)",
+      toAddrs: "",
+      subject: `(직접 입력) ${d.code} 수집 회신`,
+      bodyText: text.slice(0, MAX_TEXT),
+    })
+    .returning();
+  await applyInboundEffects(itemId, row);
+  return (await withAttachments([row]))[0];
 }
