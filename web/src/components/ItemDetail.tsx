@@ -212,7 +212,7 @@ export default function ItemDetail({ id, onChanged, notify, onSelect, refreshTok
         </dl>
 
         {(focused.key === "review" || focused.key === "prd" || focused.key === "arch" || focused.key === "qa") && (
-          <PromptDisclosure stage={focused.key} onCopy={copy} />
+          <PromptDisclosure key={focused.key} stage={focused.key} onCopy={copy} />
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">

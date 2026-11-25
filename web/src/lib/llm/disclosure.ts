@@ -3,17 +3,13 @@
  * 지시문은 실제 호출에 쓰는 상수와 조립 함수에서 얻는다. 자료가 들어가는 자리만 자리 표시로 바꾼다.
  * 로그인한 사용자에게만 보여야 하므로 클라이언트 컴포넌트에서 값을 import하지 않는다 (타입만).
  */
+import { DISCLOSURE_LABEL, type DisclosedStage } from "@/lib/domain/disclosure";
 import { buildDocReviewPrompt, DOCREVIEW_SCHEMA, DOCREVIEW_SYSTEM, type ReviewKind } from "./docreview";
 import { PRD_SYSTEM, renderPrdPrompt } from "./prd";
 import { describeLlmRuntime, temperatureFor, type LlmTask } from "./provider";
 import { buildReviewPrompt, REVIEW_SCHEMA, REVIEW_SYSTEM } from "./review";
 
-export const DISCLOSED_STAGES = ["review", "prd", "arch", "qa"] as const;
-export type DisclosedStage = (typeof DISCLOSED_STAGES)[number];
-
-export function isDisclosedStage(v: unknown): v is DisclosedStage {
-  return typeof v === "string" && (DISCLOSED_STAGES as readonly string[]).includes(v);
-}
+export { isDisclosedStage, type DisclosedStage } from "@/lib/domain/disclosure";
 
 /** 지시문에서 실행할 때 실제 자료로 바뀌는 자리 */
 export const SLOT = {
@@ -66,8 +62,7 @@ function docReview(kind: ReviewKind): PromptDisclosureDTO {
   const docName = arch ? "Architecture" : "QA(시험항목서)";
   return {
     stage: kind,
-    title: "검토 방식",
-    task: arch ? "L4 Architecture 점검" : "L5 QA 점검",
+    ...DISCLOSURE_LABEL[kind],
     inputs: [
       "PRD 최신 버전 (앞 6만 자)",
       `등록된 ${docName} 문서 최신 버전 (앞 6만 자)`,
@@ -103,8 +98,7 @@ export function getPromptDisclosure(stage: DisclosedStage): PromptDisclosureDTO 
   if (stage === "review") {
     return {
       stage,
-      title: "점검 방식",
-      task: "L1 수집 회신 구조화·점검",
+      ...DISCLOSURE_LABEL.review,
       inputs: [
         "수집 회신 메일 본문 (선택한 회신, 기본은 최신). 회신 양식 구간만 꺼내 쓰고, 구간 표식이 없으면 본문 전체를 씁니다",
         "개발사항 이름과 경로",
@@ -126,8 +120,7 @@ export function getPromptDisclosure(stage: DisclosedStage): PromptDisclosureDTO 
 
   return {
     stage,
-    title: "작성 방식",
-    task: "L2 PRD 생성",
+    ...DISCLOSURE_LABEL.prd,
     inputs: [
       "개발사항 이름",
       "수집 회신 본문과 제목·수신일 (2단계에서 점검한 회신)",

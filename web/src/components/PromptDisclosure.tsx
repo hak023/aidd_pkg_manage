@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/client-api";
-import type { DisclosedStage, PromptDisclosureDTO } from "@/lib/llm/disclosure";
+import { DISCLOSURE_LABEL, type DisclosedStage } from "@/lib/domain/disclosure";
+import type { PromptDisclosureDTO } from "@/lib/llm/disclosure";
 
-/** 2~5단계: 입력 자료 → LLM 지시 → 시스템 처리 흐름과 프롬프트 원문 (설계: docs/dev/P6_프롬프트-공개.md) */
+/**
+ * 2~5단계: 입력 자료 → LLM 지시 → 시스템 처리 흐름과 프롬프트 원문 (설계: docs/dev/P6_프롬프트-공개.md).
+ * 기본은 한 줄로 접혀 있고, 처음 펼칠 때 내용을 불러온다. 단계가 바뀌면 key로 새로 만든다.
+ */
 export default function PromptDisclosure({
   stage,
   onCopy,
@@ -12,36 +16,44 @@ export default function PromptDisclosure({
   stage: DisclosedStage;
   onCopy: (text: string, what: string) => void;
 }) {
-  const [loaded, setLoaded] = useState<PromptDisclosureDTO | null>(null);
-  const [failed, setFailed] = useState<{ stage: DisclosedStage; message: string } | null>(null);
+  const [d, setD] = useState<PromptDisclosureDTO | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [requested, setRequested] = useState(false);
+  const label = DISCLOSURE_LABEL[stage];
 
-  useEffect(() => {
-    let alive = true;
+  function load() {
+    if (requested) return;
+    setRequested(true);
     api<PromptDisclosureDTO>(`/api/prompts?stage=${stage}`)
-      .then((r) => alive && setLoaded(r))
-      .catch((e: Error) => alive && setFailed({ stage, message: e.message }));
-    return () => {
-      alive = false;
-    };
-  }, [stage]);
-
-  const d = loaded?.stage === stage ? loaded : null;
-  const error = failed?.stage === stage ? failed.message : null;
+      .then(setD)
+      .catch((e: Error) => {
+        setError(e.message);
+        setRequested(false);
+      });
+  }
 
   return (
-    <div className="mt-4 border-t border-line pt-4" aria-label="작성·검토 방식">
+    <details
+      className="mt-4 border-t border-line pt-3 group"
+      aria-label="작성·검토 방식"
+      onToggle={(e) => (e.currentTarget as HTMLDetailsElement).open && load()}
+    >
+      <summary className="cursor-pointer select-none text-[13px] list-none flex items-center gap-2">
+        <span className="text-muted text-[11px] transition-transform group-open:rotate-90" aria-hidden>
+          ▶
+        </span>
+        <span className="font-semibold">{label.title}</span>
+        <span className="text-muted truncate">· {label.task} · 입력 자료, 프롬프트 원문, 시스템 처리</span>
+      </summary>
       {!d ? (
-        <p className={`text-[12px] ${error ? "text-danger" : "text-muted"}`}>
-          {error ? `작성·검토 방식을 불러오지 못했습니다: ${error}` : "작성·검토 방식을 불러오는 중…"}
+        <p className={`mt-3 text-[12px] ${error ? "text-danger" : "text-muted"}`}>
+          {error ? `작성·검토 방식을 불러오지 못했습니다: ${error} (접었다 펼치면 다시 시도합니다)` : "불러오는 중…"}
         </p>
       ) : (
-        <>
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-2">
-            <h3 className="text-[13px] font-semibold">
-              {d.title} <span className="font-normal text-muted">· {d.task}</span>
-            </h3>
-            <span className={`text-[12px] ${d.runtime.provider === "gemini" ? "text-muted" : "text-warn"}`}>{d.runtime.label}</span>
-          </div>
+        <div className="mt-3">
+          <p className={`text-[12px] mb-2 ${d.runtime.provider === "gemini" ? "text-muted" : "text-warn"}`}>
+            실행 방식: {d.runtime.label}
+          </p>
 
           <div className="grid md:grid-cols-3 gap-3 text-[13px]">
             <Step no="①" title="입력 자료">
@@ -82,9 +94,9 @@ export default function PromptDisclosure({
           <p className="mt-2 text-[12px] text-muted">
             원문은 LLM에 보내는 글자 그대로입니다. <span className="font-mono">{"{ }"}</span>로 표시한 자리만 실행할 때 실제 자료로 바뀝니다.
           </p>
-        </>
+        </div>
       )}
-    </div>
+    </details>
   );
 }
 
