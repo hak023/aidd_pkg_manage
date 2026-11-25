@@ -9,6 +9,7 @@ import DocPanel from "./DocPanel";
 import Markdown from "./Markdown";
 
 const LABEL = { arch: "Architecture", qa: "QA(시험항목서)" } as const;
+const REQUEST_FILE = { arch: "architecture.md", qa: "qa.md" } as const;
 const GUESS = { arch: "Architecture로 보임", qa: "QA로 보임", other: "유형 불명" } as const;
 
 /** 4·5단계: 개발사 문서 등록·버전과 검토 리포트 */
@@ -163,7 +164,7 @@ function SourceDocCard({
         <div>
           <h3 className="font-semibold">개발사 {LABEL[kind]} 문서</h3>
           <p className="text-[12px] text-muted">
-            회사 메일에서 “전달용 제목”을 붙여 Gmail로 전달하면 자동으로 등록됩니다. 개정본은 새 버전으로 쌓입니다.
+            개발사로부터 {REQUEST_FILE[kind]} 파일을 요청합니다. 받은 파일은 “전달용 제목”을 붙여 Gmail로 보내면 자동으로 등록되고, 개정본은 새 버전으로 쌓입니다.
           </p>
         </div>
         <button

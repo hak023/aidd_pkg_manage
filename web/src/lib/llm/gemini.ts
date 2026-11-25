@@ -58,6 +58,8 @@ export async function resolveModel(cfg: GeminiConfig): Promise<string> {
   return cands[0];
 }
 
+export const DEFAULT_TEMPERATURE = 0.2;
+
 export interface GenerateOptions {
   system?: string;
   /** 지정하면 JSON 응답 (Gemini responseSchema, OpenAPI 부분집합) */
@@ -76,7 +78,7 @@ export async function generateText(
   prompt: string,
   opts: GenerateOptions = {},
 ): Promise<GenerateResult> {
-  const generationConfig: Record<string, unknown> = { temperature: opts.temperature ?? 0.2 };
+  const generationConfig: Record<string, unknown> = { temperature: opts.temperature ?? DEFAULT_TEMPERATURE };
   if (opts.schema) {
     generationConfig.responseMimeType = "application/json";
     generationConfig.responseSchema = opts.schema;

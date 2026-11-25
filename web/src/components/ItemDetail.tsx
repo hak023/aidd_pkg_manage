@@ -14,6 +14,7 @@ import PrdPanel from "./PrdPanel";
 import DocReviewPanel from "./DocReviewPanel";
 import ProgressPanel from "./ProgressPanel";
 import RequestMailDialog from "./RequestMailDialog";
+import PromptDisclosure from "./PromptDisclosure";
 
 interface Props {
   id: number;
@@ -126,7 +127,7 @@ export default function ItemDetail({ id, onChanged, notify, onSelect, refreshTok
         <button
           onClick={() => copy(forwardSubject(item.code, item.name), "전달용 제목")}
           className="border border-line bg-panel rounded-md px-2.5 py-1 hover:border-accent"
-          title="개발사 문서를 회사 메일에서 Gmail로 전달할 때 제목에 붙이면 자동으로 이 개발사항에 등록됩니다."
+          title="개발사로부터 받은 architecture.md·qa.md 파일을 Gmail로 보낼 때 제목에 붙이면 자동으로 이 개발사항에 등록됩니다."
         >
           전달용 제목 복사 <span className="font-mono text-muted">{mailTag(item.code)}</span>
         </button>
@@ -209,6 +210,10 @@ export default function ItemDetail({ id, onChanged, notify, onSelect, refreshTok
           <Info title="시스템이 하는 일">{focused.systemAction}</Info>
           <Info title="완료 조건">{focused.doneWhen}</Info>
         </dl>
+
+        {(focused.key === "review" || focused.key === "prd" || focused.key === "arch" || focused.key === "qa") && (
+          <PromptDisclosure stage={focused.key} onCopy={copy} />
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {focused.key === "done" && (

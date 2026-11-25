@@ -28,7 +28,7 @@ npm run dev          # http://localhost:3000
 | `npm test` | 단위·저장소 테스트 (Vitest + 메모리 PGlite) |
 | `npm run typecheck` | Next 라우트 타입 생성 후 TypeScript 검사 |
 | `npm run lint` | ESLint |
-| `npm run seed:demo` | 시연 데이터만 초기화 후 6개 단위서비스 시연 데이터 재생성 (`-- --clear`로 시연 데이터만 비우기). 실제 업무 데이터는 유지 |
+| `npm run seed:demo` | 시연 데이터만 초기화 후 시연용 개발사항(음성링고 / R164PKG_26.12, 1~7단계 상태별 7개) 재생성 (`-- --clear`로 시연 데이터만 비우기). 실제 업무 데이터는 유지 |
 | `npm run hash-password` | 다중 사용자 비밀번호 해시 생성 (`USER_<ID>_PASSWORD_HASH`에 넣음) |
 
 > Windows의 Git Bash에서 `/c/...` 경로로 `npm test`를 실행하면 Vitest가 모듈을 두 번 불러와 실패할 수 있습니다. PowerShell이나 `C:\` 경로에서 실행하세요.
@@ -65,15 +65,16 @@ src/
       sim/scenario         전체 시나리오 1~7단계 자동 실행 (시뮬레이터 모드)
       demo/seed            시연 데이터(is_demo)만 초기화 후 재생성 (머리글 버튼, 로그인한 모든 사용자)
       items/[id]/documents 문서 버전 목록·편집본 저장 · documents/[id] 원문(?download=1)
+      prompts              2~5단계의 작성·검토 방식과 프롬프트 원문 ?stage=review|prd|arch|qa
   components/              화면 컴포넌트 (Workspace, TreePanel, ItemDetail, Mail, MailInbox, Settings …)
   lib/
     auth.ts                로그인(단일 계정 또는 AUTH_USERS 다중 사용자, scrypt 해시)과 HMAC 서명 쿠키
     session.ts             요청별 로그인 사용자 문맥 (메일 config가 사용자별 값을 읽음)
-    demo/                  6개 단위서비스·라벨링·개발사항 카탈로그 및 1~7단계 실무형 산출물 빌더
+    demo/                  시연 시나리오 하나(catalog), 일정(timeline), 1~7단계 산출물 빌더(builders). 생성 엔진은 repo/demo-seed.ts
     db/                    Drizzle 스키마, 연결(Neon/PGlite), SQL 마이그레이션
     domain/                단계 정의, 트리 배치 규칙, 메일 태그·파일명 규칙
     mail/                  메일 config·본문 작성·분류/매칭·Gmail SMTP/IMAP·시뮬레이터 샘플
-    llm/                   Gemini REST, L1 점검·L2 PRD·L3 분류·L4/L5 대조의 프롬프트·스키마·검증, 모의 LLM, 작업별 실행기
+    llm/                   Gemini REST, L1 점검·L2 PRD·L3 분류·L4/L5 대조의 프롬프트·스키마·검증, 모의 LLM, 작업별 실행기, 프롬프트 공개(disclosure)
     repo/                  DB 작업 (트리, 개발사항, 단계, 이력, 메일, 점검·PRD·문서 버전, Architecture/QA 등록·리포트·공유)
 tests/                     Vitest (테스트 이름 앞의 TC ID는 docs/test/의 시험 문서와 같음)
 ```

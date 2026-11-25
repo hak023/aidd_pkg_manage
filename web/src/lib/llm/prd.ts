@@ -47,15 +47,39 @@ export const PRD_SYSTEM = `너는 KT 서비스 개발 BA의 PRD 작성 도우미
 - 개발 타당성, 범위 확정, 설계 판단을 대신 내리지 않는다. 의견이 갈리면 그대로 [상충]으로 남긴다.
 - 출력은 markdown만 쓴다. 코드 블록(\`\`\`)으로 감싸지 않는다.`;
 
+/** 지시문에 채워 넣는 값. 화면 공개(disclosure.ts)는 여기에 자리 표시를 넣어 같은 지시문을 얻는다. */
+export interface PrdPromptSlots {
+  itemName: string;
+  today: string;
+  replySubject: string;
+  replyDate: string;
+  replyText: string;
+  reviewJson: string;
+  qa: string;
+  extraNote: string;
+}
+
 export function buildPrdPrompt(i: PrdInput): string {
-  const today = kstDate(i.now);
   const qa = i.answers
     .map((a, n) => `Q${n + 1}. [${a.section || "-"}] ${a.question}\nA${n + 1}. ${a.answer.trim() || "(답 없음)"}`)
     .join("\n");
-  return `개발사항 "${i.itemName}"의 PRD 본문을 작성하라.
+  return renderPrdPrompt({
+    itemName: i.itemName,
+    today: kstDate(i.now),
+    replySubject: i.reply.subject,
+    replyDate: kstDate(i.reply.receivedAt),
+    replyText: i.reply.text,
+    reviewJson: JSON.stringify(i.review),
+    qa: qa || "(없음)",
+    extraNote: i.extraNote.trim() || "(없음)",
+  });
+}
+
+export function renderPrdPrompt(s: PrdPromptSlots): string {
+  return `개발사항 "${s.itemName}"의 PRD 본문을 작성하라.
 
 [출력 형식] 아래 12개 장을 이 순서와 제목 그대로 "## " 제목으로 쓴다. 머리글(# 제목, 메타 정보)과 변경 이력은 쓰지 않는다.
-${PRD_SECTIONS.map((s) => `## ${s}`).join("\n")}
+${PRD_SECTIONS.map((t) => `## ${t}`).join("\n")}
 
 [장별 규칙]
 - 2장: 표 | 일자 | 채널 | 참여자 | 논의 내용 | 결정 사항 | 출처 | (날짜순)
@@ -63,20 +87,20 @@ ${PRD_SECTIONS.map((s) => `## ${s}`).join("\n")}
 - 6장: 표 | 이름 | 부서 | 역할 | 이메일 |
 - 7장: "### 7.1 기능 요구사항" 표 | ID | 요구사항 | 우선순위 | 수용 기준 | 출처 | (ID는 FR-01부터), "### 7.2 비기능 요구사항" 표 (ID는 NFR-01부터). 우선순위·수용 기준이 자료에 없으면 "확인 필요".
 - 11장: [상충] 항목과 답이 없는 질문, 자료에서 "확인 안 됨"인 내용을 모두 넣는다.
-- 담당자 답(A)이 있으면 해당 장에 반영하고 [담당자 보완 ${today}]로 표기한다.
+- 담당자 답(A)이 있으면 해당 장에 반영하고 [담당자 보완 ${s.today}]로 표기한다.
 
 <data>
-## 수집 회신 (제목: ${i.reply.subject}, 수신: ${kstDate(i.reply.receivedAt)})
-${i.reply.text}
+## 수집 회신 (제목: ${s.replySubject}, 수신: ${s.replyDate})
+${s.replyText}
 
 ## 점검 결과 (JSON)
-${JSON.stringify(i.review)}
+${s.reviewJson}
 
 ## 추가 확인 질문과 담당자 답
-${qa || "(없음)"}
+${s.qa}
 
 ## 담당자 보완 메모
-${i.extraNote.trim() || "(없음)"}
+${s.extraNote}
 </data>`;
 }
 

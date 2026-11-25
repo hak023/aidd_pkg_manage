@@ -6,7 +6,7 @@
  * - 운영에서 키 없음 → 오류 (가짜 결과가 나가지 않게)
  */
 import { DomainError } from "@/lib/repo/errors";
-import { generateText, getGeminiConfig, resolveModel } from "./gemini";
+import { DEFAULT_TEMPERATURE, generateText, getGeminiConfig, resolveModel } from "./gemini";
 import {
   buildPrdPrompt,
   cleanPrdBody,
@@ -65,6 +65,24 @@ const TASK_MODEL_ENV: Record<LlmTask, string> = {
   progress: "GEMINI_MODEL_PROGRESS",
 };
 
+/** 작업별 temperature. 화면 공개(disclosure.ts)도 이 값을 쓴다. */
+export const TASK_TEMPERATURE: Partial<Record<LlmTask, number>> = { prd: 0.3 };
+
+export function temperatureFor(task: LlmTask): number {
+  return TASK_TEMPERATURE[task] ?? DEFAULT_TEMPERATURE;
+}
+
+/** 지금 설정에서 이 작업이 어떻게 실행되는지 (모델 목록 조회 없이 설정값만 본다) */
+export function describeLlmRuntime(task: LlmTask): { provider: LlmProvider | "unset"; modelEnv: string; model: string | null; error?: string } {
+  const modelEnv = TASK_MODEL_ENV[task];
+  const model = (process.env[modelEnv] ?? "").trim() || getGeminiConfig().model;
+  try {
+    return { provider: getLlmProvider(), modelEnv, model };
+  } catch (e) {
+    return { provider: "unset", modelEnv, model, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 async function modelFor(task: LlmTask): Promise<string> {
   const cfg = getGeminiConfig();
   const specific = (process.env[TASK_MODEL_ENV[task]] ?? "").trim();
@@ -88,7 +106,7 @@ export async function runReview(ctx: { itemName: string; path: string }, source:
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = await generateText(cfg, model, prompt, { system: REVIEW_SYSTEM, schema: REVIEW_SCHEMA });
+      const r = await generateText(cfg, model, prompt, { system: REVIEW_SYSTEM, schema: REVIEW_SCHEMA, temperature: temperatureFor("review") });
       return { provider, model, output: normalizeReview(JSON.parse(r.text)) };
     } catch (e) {
       lastErr = e;
@@ -111,7 +129,7 @@ export async function runPrd(input: PrdInput): Promise<LlmRun<string>> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = await generateText(cfg, model, prompt, { system: PRD_SYSTEM, temperature: 0.3 });
+      const r = await generateText(cfg, model, prompt, { system: PRD_SYSTEM, temperature: temperatureFor("prd") });
       const body = cleanPrdBody(r.text);
       const missing = missingPrdSections(body);
       if (missing.length) throw new Error(`PRD에 빠진 장이 있습니다: ${missing.join(", ")}`);
@@ -137,7 +155,7 @@ async function runJson<T>(
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = await generateText(cfg, model, prompt, { system, schema });
+      const r = await generateText(cfg, model, prompt, { system, schema, temperature: temperatureFor(task) });
       return { model, output: normalize(JSON.parse(r.text)) };
     } catch (e) {
       lastErr = e;
