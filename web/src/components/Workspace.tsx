@@ -178,7 +178,7 @@ export default function Workspace() {
       setRefreshToken((t) => t + 1);
       setToast({
         kind: "ok",
-        text: `시연 데이터를 새로 만들었습니다: 단위서비스 ${r.summary.services}개, 라벨링 ${r.summary.labels}개, 개발사항 ${r.summary.items}개`,
+        text: `시연 데이터를 새로 만들었습니다: 단위서비스 ${r.summary.services}개, 라벨링 ${r.summary.labels}개, 개발사항 ${r.summary.items}개 (1~7단계 상태별 1개씩)`,
       });
     } catch (e) {
       setToast({ kind: "error", text: `시연 데이터 초기화 실패: ${(e as Error).message}` });
@@ -215,7 +215,7 @@ export default function Workspace() {
             onClick={resetDemo}
             disabled={seeding}
             className="border border-line rounded-md px-3 py-1.5 text-[13px] hover:border-warn hover:text-warn disabled:opacity-50"
-            title="시연 데이터만 지우고 6개 단위서비스 시연 데이터를 새로 만듭니다 (실제 업무 데이터는 유지)"
+            title="시연 데이터만 지우고 시연용 개발사항(1~7단계 상태별 7개)을 새로 만듭니다 (실제 업무 데이터는 유지)"
           >
             {seeding ? "초기화 중…" : "시연 데이터 초기화"}
           </button>

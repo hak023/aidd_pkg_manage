@@ -1,70 +1,232 @@
-import { CATALOG_IN, expandItem } from "./catalog-in";
-import { EXTRA_IN_1588, EXTRA_IN_RINGO_VIDEO, EXTRA_IN_RINGO_VOICE } from "./catalog-in-extra";
-import { EXTRA_IN_RINGO_VIDEO_MORE, SERVICE_AI_ASSISTANT } from "./catalog-ai-1";
-import { EXTRA_AI_ASSISTANT_MORE, SERVICE_080_AS } from "./catalog-080";
-import { EXTRA_080_MORE, SERVICE_MODOO_AI } from "./catalog-modoo";
-import type { ServiceCatalog } from "./types";
-
-const EXTRA_MODOO_MORE = [
-  expandItem({
-    title: "모바일 사내업무 앱 음성 질의(STT)·요약 브리핑 핸즈프리 모드 개발",
-    keywords: "모두의AI, 모바일음성질의, 핸즈프리브리핑, 이동중업무, 단말보안",
-    memo: "외근·출장 이동 중 모바일 사내앱에서 음성으로 규정·보고서를 질의하고 요약 청취",
-    background: "현장 점검 및 외근 비중이 높은 영업·운용 직군이 이동 중 작은 모바일 자판으로 긴 질문을 치기 어려워 음성 질의·청취 모드를 요청함.",
-    currentIssue: "모바일 웹 화면에서 텍스트 입력 위주로만 동작하고 긴 표·문서 답변을 귀로 듣기 좋게 구어체 브리핑으로 요약해 주는 기능이 없음.",
-    goal: "모바일 앱 내 원터치 음성 질문 인식과 핵심 3문장 구어체 요약 TTS 브리핑 모드를 제공해 외근 직군 활용성 강화.",
-    inScope: "모바일 웹오디오/네이티브 브릿지 STT 입력, 장문 답변 3문장 음성 브리핑 변환, 이어폰 연결 해제 시 자동 일시정지 보호",
-    outOfScope: "차량 인포테인먼트 전용 별도 스토어 앱 출시",
-    linkedSystem: "모바일 사내업무 앱, 모두의AI 스트리밍 STT·TTS 서버, 모바일 MDM 인증 게이트웨이",
-    securityOps: "공공장소 음성 유출 방지를 위해 블루투스·유선 이어폰 미연결 상태에서는 스피커폰 자동 재생을 막고 화면 탭 확인 후 재생.",
-    conflictIssue: "음성 질문 녹음 오디오 원본 서버 보관 여부",
-    conflictResolution: "사내 보안 원칙에 따라 음성 패킷은 메모리에서 STT 텍스트로 변환 즉시 폐기하고 텍스트 대화 이력만 일반 정책대로 관리",
-    extraQ: "현장 소음이 심한 통신 국사·기계실에서도 전문 약어 인식이 잘 됩니까?",
-    extraA: "통신·네트워크 사내 기술 약어(SBC, MRF, OIDC, CDR 등) 바이어싱 사전을 결합해 약어 오변환을 최소화합니다.",
-    archOverview: "모바일 MDM 인증 세션에서 인메모리 STT 변환과 사내 약어 보정을 수행하고 이어폰 상태 연동 구어체 요약 브리핑을 송출한다.",
-    archModules: ["사내 기술약어 보정 모바일 STT기", "장문 답변 3문장 브리핑 변환기", "출력 오디오 기기 보안 가드"],
-    archFlow: [
-      "모바일 음성 입력 스트림을 인메모리 STT 변환 후 오디오 버퍼 즉시 소거",
-      "RAG·LLM 상세 답변 생성과 동시에 음성 청취용 3문장 요약문 추출",
-      "이어폰 연결 여부 확인(미연결 시 수동 재생 확인) 후 스트리밍 TTS 재생",
-      "재생 중 이어폰 분리 이벤트 감지 시 즉시 오디오 송출 일시정지",
-    ],
-    archExtra: "이전 답변·다음 핵심 항목으로 넘기는 모바일 잠금화면 미디어 컨트롤 연동",
-    fr1: ["사내 기술약어 보정 음성 질의 인식 및 오디오 원본 즉시 메모리 소거", "음성 파일 디스크 적재 0건 및 주요 사내 약어 인식률 93% 이상"],
-    fr2: ["상세 텍스트 답변과 별도 3문장 구어체 요약 TTS 브리핑 제공", "표·목록 포함 답변도 기호 낭독 없이 자연스러운 20초 내외 브리핑 재생"],
-    fr3: ["이어폰 미연결 시 자동 스피커 출력 차단 및 분리 즉시 일시정지", "이어폰 해제 즉시 100ms 이내 재생 정지 동작"],
-    nfr1: ["음성 발화 종료부터 첫 브리핑 음성 재생까지 지연", "2.5초 이내 브리핑 시작", "첫 문장 선행 합성 파이프라인으로 평균 1.6초 개시"],
-    nfr2: ["모바일 지하철·이동 구간 네트워크 순단 재연결", "일시 끊김 시 기생성 텍스트 답변 유실 없이 화면 복구", "웹소켓 끊김 시 응답 전체 취소로 작성됨", "이동 중 셀 핸드오버가 잦으므로 마지막 수신 오프셋 기준 재연결(Resume) 버퍼를 설계에 추가해야 함"],
-  }),
-];
+import type { DemoScenario } from "./types";
 
 /**
- * 시연용 6개 단위서비스 전체 카탈로그.
- * 각 단위서비스는 라벨링 3개와 고유 개발사항 설계 원본 12개를 가진다.
+ * 시연용 개발사항 하나. 같은 개발사항을 1~7단계 상태로 각각 만들어 단계별 화면을 보여 준다.
+ * 관련자 3명 외의 내용(개발사, 수치, 논의 이력)은 합성 자료다.
  */
-export const DEMO_CATALOG: ServiceCatalog[] = [
-  {
-    ...CATALOG_IN[0], // 전국대표번호
-    items: [...CATALOG_IN[0].items, ...EXTRA_IN_1588],
+export const DEMO_SCENARIO: DemoScenario = {
+  service: "음성링고",
+  label: "R164PKG_26.12",
+  title: "계절·명절 인사말 자동 추천 템플릿 및 예약 일괄 전환 서비스",
+  keywords: "음성링고, 명절 인사말, 시즌 템플릿, 예약 전환, 자동 복귀, 소상공인 휴무 안내",
+  searchPeriod: "최근 6개월",
+  memo: "설·추석·연말연시 휴무 안내 멘트 설정이 연휴 직전에 몰림. 추천 문구 템플릿과 시작·종료 예약(자동 복귀)으로 점주 편의를 높이고 부하를 분산",
+  vendorName: "링고웨이브시스템즈",
+  people: {
+    requester: { name: "허유진", dept: "상품기획(사업 BM)", role: "요청", email: "yujin.huh@kt.com" },
+    reviewer: { name: "이승학", dept: "현장(영업 AM)", role: "검토", email: "seunghak.lee2@kt.com" },
+    ops: { name: "옥수빈", dept: "운용 부서", role: "운영·검증", email: "subin.ok@kt.com" },
   },
-  {
-    ...CATALOG_IN[1], // 음성링고
-    items: [...CATALOG_IN[1].items, ...EXTRA_IN_RINGO_VOICE],
-  },
-  {
-    ...CATALOG_IN[2], // 영상링고
-    items: [...CATALOG_IN[2].items, ...EXTRA_IN_RINGO_VIDEO, ...EXTRA_IN_RINGO_VIDEO_MORE],
-  },
-  {
-    ...SERVICE_AI_ASSISTANT, // AI통화비서
-    items: [...SERVICE_AI_ASSISTANT.items, ...EXTRA_AI_ASSISTANT_MORE],
-  },
-  {
-    ...SERVICE_080_AS, // 080착신형AS
-    items: [...SERVICE_080_AS.items, ...EXTRA_080_MORE],
-  },
-  {
-    ...SERVICE_MODOO_AI, // 모두의AI
-    items: [...SERVICE_MODOO_AI.items, ...EXTRA_MODOO_MORE],
-  },
-];
+  history: [
+    {
+      key: "h1",
+      channel: "메일",
+      sourceChannel: "Outlook",
+      author: "허유진",
+      title: "음성링고 명절 인사말 템플릿·예약 전환 개선 요청",
+      participants: "허유진, 이승학",
+      topic: "지난 명절 연휴의 VoC(문구 작성 어려움, 연휴 뒤 휴무 안내 계속 송출)와 개선 요청 공유",
+      decision: "추천 문구 템플릿과 예약 전환 방식 검토 착수",
+    },
+    {
+      key: "h2",
+      channel: "회의",
+      sourceChannel: "Teams",
+      author: "회의록",
+      title: "음성링고 명절 인사말 개선 1차 검토 회의",
+      participants: "허유진, 이승학, 옥수빈",
+      topic: "업종별 추천 문구 템플릿과 시작·종료 예약을 묶는 방안 검토",
+      decision: "템플릿 30종(업종 6 × 시즌 5)과 예약 전환·자동 복귀 방향 채택",
+    },
+    {
+      key: "h3",
+      channel: "Teams",
+      sourceChannel: "Teams",
+      author: "옥수빈",
+      title: "음성링고 운용협의",
+      participants: "옥수빈, 이승학",
+      topic: "연휴 시작 정각에 예약 전환이 몰릴 때의 부하와 야간 작업 영향",
+      decision: "1,000건 단위 분할 전환과 예약 시점 음원 사전 합성 요청",
+    },
+    {
+      key: "h4",
+      channel: "메일",
+      sourceChannel: "Outlook",
+      author: "이승학",
+      title: "명절 인사말 개선 현장 의견 취합",
+      participants: "이승학, 허유진, 옥수빈",
+      topic: "영업 현장에서 들은 점주 의견 취합 (복귀 일시 입력이 번거로움, 프랜차이즈 본사 일괄 적용 요청)",
+      decision: "[상충] 종료 일시 미지정 예약 허용 여부 — 상품기획은 선택 입력, 운용은 필수 입력 의견",
+      resolved: "종료 일시 필수 입력으로 확정, 기본값(연휴 다음 영업일 08:00) 자동 입력",
+    },
+    {
+      key: "h5",
+      channel: "회의",
+      sourceChannel: "Teams",
+      author: "회의록",
+      title: "음성링고 명절 인사말 개선 2차 검토 회의",
+      participants: "허유진, 이승학, 옥수빈",
+      topic: "프랜차이즈 본사 일괄 적용과 매장 POS 영업 상태 연동의 포함 여부",
+      decision: "이번 패키지에서 제외하고 다음 패키지에서 다시 검토",
+    },
+    {
+      key: "h6",
+      channel: "메일",
+      sourceChannel: "Outlook",
+      author: "허유진",
+      title: "R164PKG_26.12 반영 범위 확정",
+      participants: "허유진, 이승학, 옥수빈",
+      topic: "목표 패키지와 첫 적용 시점 확정",
+      decision: "R164PKG_26.12 반영 대상에 포함, 연말연시 인사말부터 적용",
+    },
+  ],
+  funcReqs: [
+    {
+      id: "FR-01",
+      title: "업종·시즌별 추천 문구 템플릿 제공",
+      priority: "상",
+      criteria:
+        "업종 6종 × 시즌 5종(설·추석·연말연시·여름휴가·임시휴무) 총 30종 제공. 상호명과 휴무 기간만 입력하면 문구가 완성되고 3초 이내 미리듣기 재생",
+      source: "h2",
+      sinceVersion: 1,
+      arch: {
+        verdict: "반영",
+        location: "3.1 시즌 템플릿 엔진",
+        note: "업종·시즌 코드로 템플릿을 조회하고 상호명·휴무 기간 변수를 치환하는 구조와 미리듣기용 고정 구간 캐시가 설계됨.",
+      },
+      qa: {
+        verdict: "반영",
+        location: "TC-01, TC-02",
+        note: "템플릿 30종 조회·변수 치환 시험과 미리듣기 응답 시간 시험이 있음.",
+      },
+    },
+    {
+      id: "FR-02",
+      title: "시작·종료 일시 예약 전환 및 자동 복귀",
+      priority: "상",
+      criteria: "시작 일시에 시즌 음원으로 전환하고 종료 일시에 직전 영업 음원으로 자동 복귀. 복귀 누락 0건",
+      source: "h2",
+      sinceVersion: 1,
+      arch: {
+        verdict: "반영",
+        location: "3.2 예약 전환·자동 복귀 스케줄러",
+        note: "예약 테이블의 시작·종료 일시로 활성 음원 포인터를 전환·원복하는 흐름과 직전 음원 보관 방식이 설계됨.",
+      },
+      qa: {
+        verdict: "반영",
+        location: "TC-03, TC-04",
+        note: "예약 전환·자동 복귀 시험과 예약 취소 시 미전환 확인 시험이 있음.",
+      },
+    },
+    {
+      id: "FR-03",
+      title: "종료 일시 필수 입력 및 기본값 자동 설정",
+      priority: "상",
+      criteria: "시즌 템플릿을 고르면 종료 일시 기본값(연휴 다음 영업일 08:00)을 자동으로 채우고, 종료 일시가 비어 있으면 저장할 수 없음",
+      source: "answer",
+      sinceVersion: 1,
+      arch: {
+        verdict: "부분",
+        location: "3.2 예약 전환·자동 복귀 스케줄러",
+        note: "설계서는 종료 일시를 '권장 입력'으로 두고 미입력 시 연휴 마지막 날 24:00에 복귀한다고 적음. PRD는 필수 입력과 기본값 '연휴 다음 영업일 08:00'을 요구함.",
+      },
+      qa: {
+        verdict: "반영",
+        location: "TC-05",
+        note: "종료 일시 기본값 자동 입력과 미입력 시 저장 차단을 확인하는 시험이 있음.",
+      },
+    },
+    {
+      id: "FR-04",
+      title: "예약 등록 시점 음원 사전 합성·선배포",
+      priority: "중",
+      criteria: "예약 저장 후 10분 이내에 합성과 MRF 적재를 마치고, 전환 시각의 실시간 합성 요청 0건",
+      source: "h3",
+      sinceVersion: 1,
+      arch: {
+        verdict: "반영",
+        location: "3.3 음원 사전 합성·선배포",
+        note: "예약 저장 직후 비동기 큐로 합성해 MRF에 미리 적재하고 전환 시각에는 음원 포인터만 바꾸는 구조로 설계됨.",
+      },
+      qa: {
+        verdict: "반영",
+        location: "TC-06",
+        note: "예약 저장 후 적재 완료 시간과 전환 시각의 합성 요청 0건을 확인하는 시험이 있음.",
+      },
+    },
+    {
+      id: "FR-05",
+      title: "전환·복귀 결과 알림 및 실패 재시도",
+      priority: "중",
+      criteria: "전환·복귀 후 5분 이내 점주 앱 푸시 발송(미수신 시 문자). 실패 건은 5분 간격 3회 재시도 후 운용자 알림",
+      source: "answer",
+      sinceVersion: 1,
+      arch: {
+        verdict: "반영",
+        location: "3.4 전환 결과 알림·실패 처리",
+        note: "전환·복귀 결과 푸시와 문자 대체 발송, 5분 간격 3회 재시도 후 운용자 알림 흐름이 설계됨.",
+      },
+      qa: {
+        verdict: "부분",
+        location: "TC-07",
+        note: "앱 푸시 수신만 확인함. 문자 대체 발송과 3회 재시도 후 운용자 알림을 확인하는 시험이 없음.",
+      },
+    },
+  ],
+  nonFuncReqs: [
+    {
+      id: "NFR-01",
+      title: "정각 대량 예약 전환 처리 시간",
+      priority: "상",
+      criteria: "5만 회선 동시 예약 기준, 정각 후 60초 이내 전 회선 전환 완료",
+      source: "h3",
+      sinceVersion: 1,
+      arch: {
+        verdict: "반영",
+        location: "6. 비기능 설계",
+        note: "1,000건 단위 병렬 배치로 5만 회선을 25초에 처리하는 목표가 적혀 있어 PRD 기준(60초 이내)을 만족함.",
+      },
+      qa: {
+        verdict: "반영",
+        location: "TC-08",
+        note: "5만 회선 동시 예약 부하에서 전환 완료 시간을 재는 시험이 있음.",
+      },
+    },
+    {
+      id: "NFR-02",
+      title: "스케줄러 중복 실행 방지",
+      priority: "상",
+      criteria: "이중화 WAS 환경에서 같은 예약의 중복 실행과 중복 알림 0건",
+      source: "h3",
+      sinceVersion: 1,
+      arch: {
+        verdict: "부분",
+        location: "6. 비기능 설계",
+        note: "단일 서버 Cron 실행을 전제로 적혀 있고, 이중화 환경에서 중복 실행을 막는 방식(분산 락 등)이 없음.",
+      },
+      qa: {
+        verdict: "미반영",
+        location: "-",
+        note: "이중화 환경에서 중복 실행·중복 알림이 없는지 확인하는 시험 항목이 없음.",
+      },
+    },
+    {
+      id: "NFR-03",
+      title: "예약·전환 이력 보관",
+      priority: "중",
+      criteria: "예약·전환·복귀 이력을 12개월 보관하고 운용자가 회선별로 조회",
+      source: "answer",
+      sinceVersion: 2,
+      arch: {
+        verdict: "부분",
+        location: "4. 데이터 설계",
+        note: "이력 테이블 보관 기간이 6개월로 적혀 있음. PRD는 12개월을 요구함.",
+      },
+      qa: {
+        verdict: "반영",
+        location: "TC-10",
+        note: "전환·복귀 이력의 회선별 조회와 보관 기간 설정값(12개월)을 확인하는 시험이 있음.",
+      },
+    },
+  ],
+};
